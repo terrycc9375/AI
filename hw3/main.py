@@ -79,41 +79,36 @@ def estimate_flops(hidden_size: int, num_layers: int, seq_len: int, batch_size: 
 # Dataset
 class SentimentDataset(Dataset):
     def __init__(self, csv_path: str, tokenizer: AutoTokenizer, max_length: int):
-        """
-        Step1. Load the CSV file using pandas -> HINT: use pd.read_csv(csv_path)
-        Step2. Extract text and label columns -> HINT: df["text"].tolist(), df["label"].tolist()
-        Step3. Store tokenizer and max_length for later use
-
-        Args:
-            csv_path: Path to the CSV file (with columns 'text' and 'label')
-            tokenizer: Pre-trained tokenizer from Hugging Face
-            max_length: Maximum token length for padding/truncation
-        """
-        pass
+        df = pd.read_csv(csv_path)
+        self.texts = df["text"].tolist()
+        self.labels = df["label"].tolist()
+        self.tokenizer = tokenizer
+        self.max_length = max_length
 
     def __len__(self):
-        """
-        Returns:
-            Total number of samples in the dataset -> HINT: len(self.texts)
-        """
-        pass
+        return len(self.texts)
 
     def __getitem__(self, idx):
-        """
-        Step1. Select text and label by index -> HINT: text = self.texts[idx]; label = self.labels[idx]
-        Step2. Tokenize the text -> HINT: use self.tokenizer with truncation, padding, max_length, return_tensors="pt"
-        Step3. Convert results to proper tensor format -> HINT: enc["input_ids"].squeeze(0)
-        Step4. Return a dictionary
-
-        Returns:
-            One sample (tokenized text and label)
-        """
-        pass
+        text = self.texts[idx]
+        label = self.labels[idx]
+        encoding = self.tokenizer(
+            text,
+            truncation=True,
+            padding="max_length",
+            max_length=self.max_length,
+            return_tensors="pt"
+        )
+        item = {
+            "input_ids": encoding["input_ids"].squeeze(0),
+            "attention_mask": encoding["attention_mask"].squeeze(0),
+            "labels": torch.tensor(label, dtype=torch.long)
+        }
+        return item
 
 
 # Model Architecture Components
 class CustomBlock(nn.Module): 
-    def __init__(self): 
+    def __init__(self, hidden_size: int, dropout_rate: float = 0.1, expansion_factor: int = 4): 
         """
         Initialize the layers and parameters of this block.
 
@@ -122,24 +117,25 @@ class CustomBlock(nn.Module):
         - Define any sub-layers you need (e.g., Linear, Conv1d, Dropout).
         - Store any configuration parameters (e.g., hidden size, kernel size).
         """
-        pass
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.expansion_factor = expansion_factor
+        self.linear1 = torch.nn.Linear(hidden_size, hidden_size * expansion_factor)
+        self.linear2 = torch.nn.Linear(hidden_size * expansion_factor, hidden_size)
+        self.dropout = torch.nn.Dropout(dropout_rate)
+        self.norm = torch.nn.LayerNorm(hidden_size)
+        self.activation = torch.nn.GELU()
 
-    def forward(self): 
-        """
-        Define how data moves through the block.
-
-        Args:
-            ... : input tensor(s)
-
-        Returns:
-            The transformed output tensor.
-
-        HINTS:
-        - The forward pass describes the actual computation.
-        - Use the layers defined in __init__ to process the input.
-        - Make sure to return the final output tensor.
-        """
-        pass
+    def forward(self, x):
+        residual = x
+        out = self.linear1(x)
+        out = self.activation(out)
+        out = self.dropout(out)
+        out = self.linear2(out)
+        out = self.dropout(out)
+        out = out + residual  # Residual connection
+        out = self.norm(out)
+        return out
 
 
 # Example of Custom Block
