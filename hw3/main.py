@@ -17,7 +17,7 @@ import gc
 import json
 import random
 import argparse
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Any
 
 import numpy as np
 import pandas as pd
@@ -73,7 +73,7 @@ def estimate_flops(hidden_size: int, num_layers: int, seq_len: int, batch_size: 
     Returns:
         Estimated FLOPs per training step (in GFLOPs)
     '''
-    pass
+    return 0.0
 
 
 # Dataset
@@ -155,93 +155,63 @@ class CustomMLP(nn.Module):
 
 # Model Config
 class SentimentConfig(PretrainedConfig):
-    model_type = "..."  # describe this model type
+    model_type = "sentiment-bert"
 
     def __init__(
         self,
-        model_name="...", # name of pre-trained model backbone
+        model_name="bert-base-uncased", # name of pre-trained model backbone
         num_labels=3,     # number of output classes (Negative, Neutral, Positive)
         head="mlp",       # classifier head
-                          # other hyperparameters
+        hidden_dropout=0.1,
+        layer_norm_eps=1e-12,
         **kwargs,
     ):
         # Always call the parent class initializer first
         super().__init__(**kwargs)
-        '''
-        Save all hyperparameters to self
-        
-        Example:
+
         self.model_name = model_name
         self.num_labels = num_labels
         self.head = head
-        ...
-        self.other_hyperparam = other_hyperparam
-        
-        These attributes will be automatically saved in config.json
-        when you call `config.save_pretrained("./path")`.
-        '''
-        pass
+        self.hidden_dropout = hidden_dropout
+        self.layer_norm_eps = layer_norm_eps
 
 
 # Model (DO NOT change the name "SentimentClassifier")
 class SentimentClassifier(PreTrainedModel):
     config_class = SentimentConfig # Which config class to use
 
-    def __init__(self, config: Optional[SentimentConfig] = None):
+    def __init__(self, config: SentimentConfig):
         super().__init__(config)
-        """
-        Initialize the model components using the configuration.
 
-        HINTS: 
-        - Use AutoModel.from_pretrained(config.model_name)
-        - Get hidden size from encoder config
-        - Conduct layer normalization
-        - Define classifier head
-        - Use dropout layer for regularization
-        - Apply loss function
-        - Store any other hyperparameters from config
-
-        Example:
         self.encoder = AutoModel.from_pretrained(config.model_name)
         self.hidden_size = self.encoder.config.hidden_size
-        self.norm = nn.LayerNorm(self.hidden_size)
-        self.head_type = config.head
-        self.head = CustomBlock(self.hidden_size, config.num_labels)
-        self.dropout = nn.Dropout(config.dropout)
-        self.loss_fn = nn.CrossEntropyLoss()
-        ...
-        """
-        pass
+        self.norm = torch.nn.LayerNorm(self.hidden_size, eps=config.layer_norm_eps)
+        self.dropout = torch.nn.Dropout(config.hidden_dropout)
+
+        if config.head == "mlp":
+            self.classifier = torch.nn.Sequential(
+                torch.nn.Linear(self.hidden_size, self.hidden_size),
+                torch.nn.GELU(),
+                torch.nn.Dropout(config.hidden_dropout),
+                torch.nn.Linear(self.hidden_size, config.num_labels)
+            )
+        elif config.head == "linear":
+            self.classifier = torch.nn.Linear(self.hidden_size, config.num_labels)
+        else:
+            raise ValueError(f"Unknown head type: {config.head}")
+        
+        self.loss_function = torch.nn.CrossEntropyLoss()
 
     def forward(self, input_ids, attention_mask=None, token_type_ids=None, labels=None):
-        """
-        Defines how the input data flows through the model.
-
-        Args:
-            input_ids: tokenized input sequences
-            attention_mask: masks for padding tokens
-            labels: ground-truth labels (optional, for training)
-
-        Returns:
-            Dictionary with "logits" (and optionally loss)
-        
-        HINTS:
-        - Pass inputs through the encoder
-        - Apply dropout and classifier head
-        - Compute loss if labels are provided
-        - Return logits (and loss if computed)
-
-        Example:
-        outputs = self.encoder(...)
-        feat = outputs.last_hidden_state
-        feat = self.dropout(self.norm(feat))
-        logits = self.head(feat)
+        encoder_outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+        sequential_output = encoder_outputs.last_hidden_state
+        cls_token = sequential_output[:, 0, :]
+        cls_token = self.dropout(self.norm(cls_token))
+        logits = self.classifier(cls_token)
         result = {"logits": logits}
         if labels is not None:
-            result["loss"] = self.loss_fn(logits, labels)
+            result["loss"] = self.loss_function(logits, labels)
         return result
-        """
-        pass
 
 
 # Evaluation
