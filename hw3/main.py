@@ -159,31 +159,38 @@ class SentimentConfig(PretrainedConfig):
 
     def __init__(
         self,
-        model_name="bert-base-uncased", # name of pre-trained model backbone
+        model_name="bert-large-uncased", # name of pre-trained model backbone
         num_labels=3,     # number of output classes (Negative, Neutral, Positive)
         head="mlp",       # classifier head
         hidden_dropout=0.1,
         layer_norm_eps=1e-12,
+        loss_type="cross_entropy",
         **kwargs,
     ):
         # Always call the parent class initializer first
-        super().__init__(**kwargs)
+        pretrained_config = AutoModel.from_pretrained(model_name).config
+        super().__init__(**pretrained_config.to_dict(), **kwargs)
 
         self.model_name = model_name
         self.num_labels = num_labels
         self.head = head
         self.hidden_dropout = hidden_dropout
         self.layer_norm_eps = layer_norm_eps
+        self.loss_type = loss_type
 
 
 # Model (DO NOT change the name "SentimentClassifier")
-class SentimentClassifier(PreTrainedModel):
+class SentimentClassifier(nn.Module):
     config_class = SentimentConfig # Which config class to use
 
     def __init__(self, config: SentimentConfig):
-        super().__init__(config)
+        super().__init__()
 
+        # print(encoder.config)
+        # encoder.config.loss_type = "cross_entropy"
+        # print(encoder.config)
         self.encoder = AutoModel.from_pretrained(config.model_name)
+        self.encoder.config.loss_type = config.loss_type
         self.hidden_size = self.encoder.config.hidden_size
         self.norm = torch.nn.LayerNorm(self.hidden_size, eps=config.layer_norm_eps)
         self.dropout = torch.nn.Dropout(config.hidden_dropout)
@@ -202,8 +209,8 @@ class SentimentClassifier(PreTrainedModel):
         
         self.loss_function = torch.nn.CrossEntropyLoss()
 
-    def forward(self, input_ids, attention_mask=None, token_type_ids=None, labels=None):
-        encoder_outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+    def forward(self, input_ids, attention_mask=None, labels=None):
+        encoder_outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
         sequential_output = encoder_outputs.last_hidden_state
         cls_token = sequential_output[:, 0, :]
         cls_token = self.dropout(self.norm(cls_token))
@@ -240,8 +247,17 @@ def evaluate(model: nn.Module, dataloader: DataLoader) -> Tuple[float, np.ndarra
             - Get predicted class from logits
             - Save ground-truth and predicted labels
             '''
-            pass
-    acc = accuracy_score(all_y, all_pred)
+            input_ids = batch["input_ids"].to(DEVICE)
+            attention_mask = batch['attention_mask'].to(DEVICE)
+            labels = batch['labels'].to(DEVICE)
+
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+            logits = outputs["logits"]
+            preds = logits.argmax(dim=-1)
+
+            all_y.extend(labels.cpu().numpy())
+            all_pred.extend(preds.cpu().numpy())
+    acc = float(accuracy_score(all_y, all_pred))
     return acc, np.array(all_y), np.array(all_pred)
 
 
@@ -255,7 +271,11 @@ def train(
     epochs: int,
     batch_size: int,
     max_length: int,
-                     # any other hyperparameters you want to add (e.g., learning rate, dropout, etc.)
+    learning_rate: float = 2e-5,
+    weight_decay: float = 0.01,
+    dropout: float = 0.1,
+    warmup_steps: int = 100,
+    grad_clip: float = 1.0,
     seed: int = 42,
 ):
     '''
@@ -271,6 +291,7 @@ def train(
     # 1. Setup & Reproducibility
     set_seed(seed)
     os.makedirs(out_dir, exist_ok=True)
+    # DEVICE: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # 2. Prepare datasets and dataloaders (train, val, test)
     '''
@@ -279,13 +300,30 @@ def train(
     ds = SentimentDataset(...)
     dl = DataLoader(...)
     '''
-    
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    training_set = SentimentDataset(train_csv, tokenizer, max_length)
+    validation_set = SentimentDataset(val_csv, tokenizer, max_length)
+    testing_set = SentimentDataset(test_csv, tokenizer, max_length)
+    dl_train = DataLoader(training_set, batch_size=batch_size, shuffle=True)
+    dl_val = DataLoader(validation_set, batch_size=batch_size, shuffle=False)
+    dl_test = DataLoader(testing_set, batch_size=batch_size, shuffle=False)
+
     # 3. Initialize the model
     '''
     Example:
     config = SentimentConfig(...)
     model = SentimentClassifier(...).to(DEVICE)
     '''
+    config = SentimentConfig(
+        model_name=model_name,
+        num_labels=3,
+        head="mlp",
+        hidden_dropout=dropout,
+        layer_norm_eps=1e-12,
+        loss_type="cross_entropy"
+    )
+    model = SentimentClassifier(config).to(DEVICE)
+    print(model.loss_function)
 
     # 4. Set up optimizer and learning rate scheduler
     '''
@@ -293,6 +331,9 @@ def train(
     optimizer = optim.AdamW(...)
     scheduler = get_linear_schedule_with_warmup(...)
     '''
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    total_steps = len(dl_train) * epochs
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
 
     # 5. Run the training loop
     best_val = -1.0
@@ -329,6 +370,20 @@ def train(
             - Update running loss
               -> running_loss += loss.item()
             '''
+            input_ids = batch["input_ids"].to(DEVICE)
+            attention_mask = batch['attention_mask'].to(DEVICE)
+            labels = batch['labels'].to(DEVICE)
+
+            optimizer.zero_grad()
+
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+            # print(model.loss_function)
+            loss = outputs["loss"]
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            optimizer.step()
+            scheduler.step()
+            running_loss += loss.item()
 
             # Display
             pbar.set_postfix(loss=f"{running_loss/(pbar.n or 1):.4f}")
@@ -357,6 +412,11 @@ def train(
         with open(os.path.join(ckpt_dir, f"{split}_report.txt"), "w") as f:
             f.write(rpt)
         '''
+        cm = confusion_matrix(y, yhat, labels=[0, 1, 2])
+        pd.DataFrame(cm, index=['TN', "TNEU", "TP"], columns=['PN', "PNEU", "PP"]).to_csv(os.path.join(ckpt_dir, f"{split}_cm.csv"))
+        report = str(classification_report(y, yhat, digits=4, target_names=['Negative', 'Neutral', 'Positive']))
+        with open(os.path.join(ckpt_dir, f"{split}_report.txt"), "w") as f:
+            f.write(report)
         return float(acc)
 
     train_acc = eval("train", dl_train)
@@ -386,7 +446,6 @@ def train(
 
 
 # Main
-
 def main():
     parser = argparse.ArgumentParser()
     # file paths
@@ -445,6 +504,33 @@ def main():
         seed=args.seed,
     )
     '''
+    print("Loading dataset...")
+    full = pd.read_csv(args.train_csv)
+
+    train_df, val_df = train_test_split(full, test_size=0.2, random_state=args.seed, stratify=full["label"])
+
+    os.makedirs(args.out_dir, exist_ok=True)
+    train_split = os.path.join(args.out_dir, "train_split.csv")
+    val_split = os.path.join(args.out_dir, "val_split.csv")
+    train_df.to_csv(train_split, index=False)
+    val_df.to_csv(val_split, index=False)
+
+    print("="*50 + "\nStarting training...\n" + "="*50)
+    train(
+        model_name=args.model_name,
+        train_csv=train_split,
+        val_csv=val_split,
+        test_csv=args.test_csv,
+        out_dir=args.out_dir,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        max_length=args.max_length,
+        learning_rate=args.lr_encoder,
+        weight_decay=0.01,
+        dropout=args.dropout,
+        warmup_steps=int(args.warmup_ratio * (len(train_df) // args.batch_size) * args.epochs),
+        seed=args.seed,
+    )
 
 if __name__ == "__main__":
     main()
