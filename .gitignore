@@ -1,3 +1,5 @@
 *.zip
 *.rar
 venv/
+saved_models/
+__pycache__/
