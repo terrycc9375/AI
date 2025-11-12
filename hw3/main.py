@@ -181,14 +181,14 @@ class SentimentConfig(PretrainedConfig):
 
 
 # Model (DO NOT change the name "SentimentClassifier")
-class SentimentClassifier(nn.Module):
+class SentimentClassifier(PreTrainedModel):
     config_class = SentimentConfig # Which config class to use
 
     def __init__(self, config: SentimentConfig):
         super().__init__()
 
         # print(f"Loss function type: {type(self.loss_function)}")
-        self.encoder = AutoModel.from_pretrained(config.model_name) # bert-large-uncased
+        self.encoder = AutoModel.from_pretrained(config.model_name) # microsoft/deberta-v3-large
         # print(f"Loss function type: {type(self.loss_function)}")
         self.loss_function = torch.nn.CrossEntropyLoss()
         # print(f"Loss function type: {type(self.loss_function)}")
@@ -326,8 +326,7 @@ def train(
         layer_norm_eps=1e-12,
         loss_type="cross_entropy"
     )
-    model = SentimentClassifier(config).to(DEVICE)
-    # print(model.loss_function)
+    model = SentimentClassifier(config).to(DEVICE) # type: ignore
 
     # 4. Set up optimizer and learning rate scheduler
     '''
@@ -402,7 +401,7 @@ def train(
             model.save_pretrained(ckpt_dir)
 
     # 6. Evaluation and save results and metrics
-    best = SentimentClassifier.from_pretrained(ckpt_dir).to(DEVICE)
+    best = SentimentClassifier.from_pretrained(ckpt_dir).to(DEVICE) # type: ignore
 
     def eval(split, dl):
         acc, y, yhat = evaluate(best, dl)
@@ -440,7 +439,7 @@ def train(
 
     # Cleanup
     try:
-        best.to("cpu"); model.to("cpu")
+        best.to("cpu"); model.to("cpu") # type: ignore
     except Exception:
         pass
     del best, model, tokenizer, optimizer, scheduler, dl_train, dl_val, dl_test
@@ -458,7 +457,7 @@ def main():
     parser.add_argument("--out_dir", type=str, default="./saved_models/") # DO NOT change the file name
 
     # model / data
-    parser.add_argument("--model_name", type=str, default="...")
+    parser.add_argument("--model_name", type=str, default="microsoft/deberta-v3-large")
     parser.add_argument("--max_length", type=int, default=int)
     parser.add_argument("--batch_size", type=int, default=int)
     parser.add_argument("--epochs", type=int, default=int)
