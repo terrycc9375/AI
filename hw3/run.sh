@@ -1,1 +1,0 @@
-python main.py --train_csv ./dataset/dataset.csv --test_csv ./dataset/dataset.csv --model_name bert-large-uncased --epochs 4 --batch_size 4 --max_length 128 --lr_encoder 2e-5 --dropout 0.1 --warmup_ratio 0.1
