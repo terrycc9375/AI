@@ -168,8 +168,9 @@ class SentimentConfig(PretrainedConfig):
         **kwargs,
     ):
         # Always call the parent class initializer first
-        pretrained_config = AutoModel.from_pretrained(model_name).config
+        pretrained_config = PretrainedConfig.from_pretrained(model_name)
         super().__init__(**pretrained_config.to_dict(), **kwargs)
+        # super().__init__(from_pretrained=model_name, **kwargs)
 
         self.model_name = model_name
         self.num_labels = num_labels
@@ -186,11 +187,12 @@ class SentimentClassifier(nn.Module):
     def __init__(self, config: SentimentConfig):
         super().__init__()
 
-        # print(encoder.config)
-        # encoder.config.loss_type = "cross_entropy"
-        # print(encoder.config)
-        self.encoder = AutoModel.from_pretrained(config.model_name)
-        self.encoder.config.loss_type = config.loss_type
+        # print(f"Loss function type: {type(self.loss_function)}")
+        self.encoder = AutoModel.from_pretrained(config.model_name) # bert-large-uncased
+        # print(f"Loss function type: {type(self.loss_function)}")
+        self.loss_function = torch.nn.CrossEntropyLoss()
+        # print(f"Loss function type: {type(self.loss_function)}")
+
         self.hidden_size = self.encoder.config.hidden_size
         self.norm = torch.nn.LayerNorm(self.hidden_size, eps=config.layer_norm_eps)
         self.dropout = torch.nn.Dropout(config.hidden_dropout)
@@ -217,7 +219,9 @@ class SentimentClassifier(nn.Module):
         logits = self.classifier(cls_token)
         result = {"logits": logits}
         if labels is not None:
-            result["loss"] = self.loss_function(logits, labels)
+            # result["loss"] = self.loss_function(logits, labels)
+            loss_function = torch.nn.CrossEntropyLoss()
+            result["loss"] = loss_function(logits, labels)
         return result
 
 
@@ -323,7 +327,7 @@ def train(
         loss_type="cross_entropy"
     )
     model = SentimentClassifier(config).to(DEVICE)
-    print(model.loss_function)
+    # print(model.loss_function)
 
     # 4. Set up optimizer and learning rate scheduler
     '''
