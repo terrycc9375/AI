@@ -1,6 +1,6 @@
 # Neural Network Library for NLP
 import torch
-import sklearn.model_selection
+import sklearn, sklearn.model_selection, sklearn.metrics
 import numpy
 import random
 
@@ -14,6 +14,7 @@ import argparse
 import os
 import datasets
 import warnings, logging
+import gc
 
 # Terminal progress bar
 import tqdm
@@ -289,7 +290,6 @@ def train(
     tokenizer.save_pretrained(checkpoint_dir)
 
     # print("Initialize successful")
-    # exit(0)
 
     class SentimentTrainer(transformers.Trainer):
         def __init__(self, *args, **kwargs):
@@ -366,19 +366,39 @@ def train(
         )
 
         trainer.train()
-        # 1. show dynamic progress bar
-        # 2. evaluate accuracy by validation set
+
         metrics = trainer.evaluate()
         val_accuracy = metrics.get("eval_accuracy", -1.0)
         console.print(f"[bold yellow]Validation Accuracy: {val_accuracy:.4f}[/bold yellow]")
-        # 3. save best model
         if val_accuracy > best_value:
             best_value = val_accuracy
             trainer.save_model(checkpoint_dir)
             tokenizer.save_pretrained(checkpoint_dir)
-            # console.print(f"[bold green]Best model saved with accuracy: {best_value:.4f}[/bold green]")
 
     console.print(f"\n[bold magenta]Training complete.")
+    best_checkpoint = trainer.state.best_model_checkpoint
+    best_model = SentimentClassifier.from_pretrained(best_checkpoint).to(DEVICE) if best_checkpoint is not None else model.to(DEVICE) # type: ignore
+    test_result = trainer.predict(tokenized_test)
+    predictions = test_result.predictions.argmax(-1)
+    true_labels = test_result.label_ids
+    accuracy = sklearn.metrics.accuracy_score(true_labels, predictions)
+    summary = {
+        "Accuracy": accuracy,
+        "params": sum(p.numel() for p in best_model.parameters()),
+        "params_trainable": sum(p.numel() for p in best_model.parameters() if p.requires_grad)
+    }
+    with open(os.path.join(out_dir, "summary.json"), "w") as f:
+        json.dump(summary, f, indent=4)
+    console.print(f"[bold green]Test Accuracy: {accuracy:.4f}[/bold green]")
+
+    try:
+        best_model.cpu()
+    except:
+        pass
+    del best_model, model, tokenizer, trainer
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 def main():
