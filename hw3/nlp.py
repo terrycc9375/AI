@@ -17,7 +17,7 @@ import warnings, logging
 import gc
 
 # Terminal progress bar
-import tqdm
+# import tqdm
 import time
 import rich, rich.progress
 import typing
@@ -30,34 +30,12 @@ torch.backends.cudnn.enabled = True
 # disable warnings
 datasets.disable_progress_bar()
 warnings.filterwarnings("ignore", category=FutureWarning)
-os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "true"
 os.environ["HF_HUB_DISABLE_EXPERIMENTAL_WARNING"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 transformers.logging.set_verbosity_error()
 transformers.logging.get_logger("transformers").setLevel(logging.CRITICAL)
 transformers.logging.get_logger("transformers.trainer").setLevel(logging.CRITICAL)
-
-# ========= 核彈級追蹤：抓住所有 print =========
-import builtins
-_original_print = builtins.print
-
-def detective_print(*args, **kwargs):
-    import traceback
-    stack = traceback.extract_stack()
-    # 看是哪個檔案、哪一行在 print
-    for frame in stack[-5:]:  # 印最近 5 層呼叫堆疊
-        if "trainer.py" in frame.filename or "training_loop" in frame.filename:
-            print("\n罪魁禍首發現！")
-            print(f"File: {frame.filename}")
-            print(f"Line: {frame.lineno}")
-            print(f"Code: {frame.line}")
-            print("-" * 50)
-            break
-    _original_print(*args, **kwargs)
-
-# 啟用偵探模式
-builtins.print = detective_print
-# ============================================
 
 def set_seed(seed: int = 42):
     random.seed(seed)
@@ -202,9 +180,9 @@ class RichProgressCallback(transformers.TrainerCallback):
 
     def _new_epoch(self, state=None):
         if self.train_task is not None:
-            self.progress.update(self.train_task, completed=self.steps_per_epoch)
+            self.progress.update(self.train_task, completed=self.steps_per_epoch) # type: ignore
 
-        self.train_task = self.progress.add_task(
+        self.train_task = self.progress.add_task( # type: ignore
             f"[green]Training",
             total=self.steps_per_epoch,
             # epoch=self.current_epoch,
@@ -220,7 +198,7 @@ class RichProgressCallback(transformers.TrainerCallback):
     def on_step_end(self, args, state, control, **kwargs):
         if self.train_task is None: return
 
-        step_in_epoch = state.global_step % self.steps_per_epoch
+        step_in_epoch = state.global_step % self.steps_per_epoch # type: ignore
         if step_in_epoch == 0 and state.global_step > 0:
             step_in_epoch = self.steps_per_epoch
 
@@ -236,16 +214,16 @@ class RichProgressCallback(transformers.TrainerCallback):
                 self.loss_steps += 1
         avg_loss = self.running_loss / self.loss_steps if self.loss_steps > 0 else 0.0
 
-        if step_in_epoch > 0 and elapsed > 0:
-            speed = step_in_epoch / elapsed
-            estimated_time = time.strftime("%H:%M:%S", time.gmtime(elapsed * self.steps_per_epoch / step_in_epoch))
+        if step_in_epoch > 0 and elapsed > 0: # type: ignore
+            speed = step_in_epoch / elapsed # type: ignore
+            estimated_time = time.strftime("%H:%M:%S", time.gmtime(elapsed * self.steps_per_epoch / step_in_epoch)) # type: ignore
             time_info = f"[bold white]{elapsed_time}[/] / [bold cyan]{estimated_time}[/]"
             speed_info = f"{speed:.1f}"
         else:
             time_info = f"[bold white]{elapsed_time}[/] / [bold cyan]-:--:--[/]"
             speed_info = "0.0"
 
-        self.progress.update(self.train_task,
+        self.progress.update(self.train_task, # type: ignore
             advance=1, 
             completed=step_in_epoch, 
             time_info=time_info, 
@@ -254,10 +232,6 @@ class RichProgressCallback(transformers.TrainerCallback):
         )
 
     def on_epoch_end(self, args, state, control, **kwargs):
-        # self.current_epoch += 1
-        # if self.current_epoch <= self.total_epochs:
-        #     self._new_epoch(state)
-        # self.progress.update(self.train_task, epoch=int(state.epoch))
         pass # since epoch = 1
 
     def on_train_end(self, args, state, control, **kwargs):
@@ -307,7 +281,7 @@ def train(
             loss = torch.nn.CrossEntropyLoss()(outputs.logits, labels) if labels is not None else None
             return (loss, outputs) if return_outputs else loss
         
-        def log(self, logs, start_time: typing.Optional[float] = None):
+        def log(self, logs, start_time: typing.Optional[float] = None): # type: ignore
             if self.state.epoch is not None:
                 logs["epoch"] = self.state.epoch
             
