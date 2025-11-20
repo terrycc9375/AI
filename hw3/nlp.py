@@ -274,7 +274,7 @@ def train(
     model = SentimentClassifier(config).to(DEVICE) # type: ignore
 
     best_value = -1.0
-    best_epoch = None
+    best_epoch = int(-1)
     checkpoint_dir = os.path.join(out_dir, "checkpoint")
     os.makedirs(checkpoint_dir, exist_ok=True)
     tokenizer.save_pretrained(checkpoint_dir)
@@ -304,6 +304,14 @@ def train(
             output = {**logs, **{"step": self.state.global_step}}
             self.state.log_history.append(output)
             return self.control
+        
+    # record the relation of epoch and accuracy
+    # x-axis: epoch, y-axis: accuracy
+    # curve: validation accuracy and test accuracy
+    # in order to find the best epoch and avoid overfitting
+    os.makedirs("./logs", exist_ok=True)
+    validation_accuracy_record = list()
+    test_accuracy_record = list()
 
     for epoch in range(epochs):
         # split training set and validation set
@@ -321,7 +329,6 @@ def train(
         tokenized_train = train_dataset.map(lambda x: tokenizer(x["text"], truncation=True, padding=True, max_length=128), batched=True, remove_columns=["text"])
         tokenized_valid = valid_dataset.map(lambda x: tokenizer(x["text"], truncation=True, padding=True, max_length=128), batched=True, remove_columns=["text"])
 
-        os.makedirs("./logs", exist_ok=True)
         training_arguments = transformers.TrainingArguments(
             output_dir=out_dir,
             eval_strategy="epoch",
@@ -361,30 +368,37 @@ def train(
 
         trainer.train()
 
-        metrics = trainer.evaluate()
-        val_accuracy = metrics.get("eval_accuracy", -1.0)
-        console.print(f"[bold yellow]Validation Accuracy: {val_accuracy:.4f}[/bold yellow]")
+        # validation
+        val_metrics = trainer.evaluate()
+        val_accuracy = val_metrics.get("eval_accuracy", -1.0)
+        validation_accuracy_record.append(val_accuracy)
+
+        # testing
+        test_metrics = trainer.predict(tokenized_test) # type: ignore
+        test_accuracy = sklearn.metrics.accuracy_score(tokenized_test["label"], test_metrics.predictions.argmax(-1)) # type: ignore
+        test_accuracy_record.append(test_accuracy)
+
+        console.print(f"[bold #b3c267]Validation Accuracy: {val_accuracy:.4f}[/] / [bold #74cfc1]Testing Accuracy: {test_accuracy:.4f}[/]")
+
         if val_accuracy > best_value:
             best_value = val_accuracy
             best_epoch = epoch + 1
+            best_model = model
             trainer.save_model(checkpoint_dir)
             tokenizer.save_pretrained(checkpoint_dir)
 
-    console.print(f"\n[bold magenta]Training complete.")
-    best_checkpoint = trainer.state.best_model_checkpoint
-    best_model = SentimentClassifier.from_pretrained(best_checkpoint).to(DEVICE) if best_checkpoint is not None else model.to(DEVICE) # type: ignore
-    test_result = trainer.predict(tokenized_test)
-    predictions = test_result.predictions.argmax(-1)
-    true_labels = test_result.label_ids
-    accuracy = sklearn.metrics.accuracy_score(true_labels, predictions)
+    # show result and save arguments
+    accuracy = test_accuracy_record[best_epoch - 1]
+    console.print(f"\n[bold magenta]Training complete.\n[bold #6edba1]Test Accuracy: {accuracy:.4f}[/]")
+
     summary = {
         "Model": model_name,
         "batch_size": batch_size,
         "Epochs": epochs,
         "Accuracy": accuracy,
         "best model in epoch": best_epoch,
-        "params": sum(p.numel() for p in best_model.parameters()),
-        "params_trainable": sum(p.numel() for p in best_model.parameters() if p.requires_grad)
+        "params": sum(p.numel() for p in model.parameters()),
+        "params_trainable": sum(p.numel() for p in model.parameters() if p.requires_grad)
     }
     path = os.path.join(out_dir, "summary.json")
     history = list()
@@ -394,13 +408,8 @@ def train(
     history.append(summary)
     with open(path, "w") as f:
         json.dump(history, f, indent=4)
-    console.print(f"[bold green]Test Accuracy: {accuracy:.4f}[/bold green]")
 
-    try:
-        best_model.cpu()
-    except:
-        pass
-    del best_model, model, tokenizer, trainer
+    del model, tokenizer
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
