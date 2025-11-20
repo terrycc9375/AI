@@ -1,1 +1,1 @@
-python nlp.py --epochs 1 --batch_size 32 --seed 42
+python nlp.py --epochs 10 --batch_size 16 --seed 42 --model_name "bert-large-uncased" --head "large"

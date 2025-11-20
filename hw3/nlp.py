@@ -76,9 +76,6 @@ class SentimentDataset(torch.utils.data.Dataset):
 class CustomBlock(torch.nn.Module):
     pass
 
-class CustomMLP(torch.nn.Module):
-    pass
-
 class SentimentConfig(transformers.PretrainedConfig):
     model_type = "sentiment_model"
     def __init__(
@@ -97,6 +94,23 @@ class SentimentConfig(transformers.PretrainedConfig):
         self.head = head
         self.model_name = model_name
 
+class BertLargeMLP(torch.nn.Module):
+    def __init__(self, config: SentimentConfig):
+        super().__init__()
+        self.mlp = torch.nn.Sequential(
+            torch.nn.Linear(config.hidden_size, config.hidden_size * 2),
+            torch.nn.GELU(),
+            torch.nn.LayerNorm(config.hidden_size * 2),
+            torch.nn.Dropout(config.hidden_dropout_prob),
+            torch.nn.Linear(config.hidden_size * 2, config.hidden_size),
+            torch.nn.GELU(),
+            torch.nn.Dropout(config.hidden_dropout_prob),
+            torch.nn.Linear(config.hidden_size, config.num_labels)
+        )
+
+    def forward(self, x):
+        return self.mlp(x)
+
 class SentimentClassifier(transformers.PreTrainedModel):
     config_class = SentimentConfig
 
@@ -104,10 +118,10 @@ class SentimentClassifier(transformers.PreTrainedModel):
         super().__init__(config)
         self.bert = transformers.AutoModel.from_pretrained(config.model_name)
         self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
-        if config.head == "mlp":
+        if config.head == "base":
             self.classifier = torch.nn.Linear(config.hidden_size, config.num_labels)
-        elif config.head == "custom":
-            self.classifier = CustomMLP()
+        elif config.head == "large":
+            self.classifier = BertLargeMLP(config)
         
         #initialize weights
         self.post_init()
@@ -242,6 +256,7 @@ class RichProgressCallback(transformers.TrainerCallback):
 
 def train(
         model_name: str,
+        head: str,
         train_csv: str,
         test_csv: str,
         out_dir: str,
@@ -254,11 +269,12 @@ def train(
     test_dataset = datasets.Dataset.from_pandas(pandas.read_csv(test_csv))
     tokenized_test = test_dataset.map(lambda x: tokenizer(x["text"], truncation=True, padding=True, max_length=128), batched=True, remove_columns=["text"])
 
-    console.print(f"[bold blue]Using device: {DEVICE}[/bold blue]")
-    config = SentimentConfig(model_name=model_name, head="mlp")
+    console.print(f"[bold #de78ba]Using device: {DEVICE}\nUsing model: {model_name}[/bold #de78ba]")
+    config = SentimentConfig(model_name=model_name, head=head)
     model = SentimentClassifier(config).to(DEVICE) # type: ignore
 
     best_value = -1.0
+    best_epoch = None
     checkpoint_dir = os.path.join(out_dir, "checkpoint")
     os.makedirs(checkpoint_dir, exist_ok=True)
     tokenizer.save_pretrained(checkpoint_dir)
@@ -311,7 +327,11 @@ def train(
             eval_strategy="epoch",
             per_device_train_batch_size=batch_size,
             per_device_eval_batch_size=batch_size * 2,
-            learning_rate=3e-5,
+            learning_rate=1e-5, # based: 3e-5 ~ 5e-5, large: 1e-5 ~ 3e-5
+            weight_decay=0.01, # large
+            max_grad_norm=1.0, #large
+            lr_scheduler_type="cosine", # large
+            warmup_ratio=0.1, # large
             num_train_epochs=1,
             logging_dir="./logs",
             logging_strategy="steps",
@@ -346,6 +366,7 @@ def train(
         console.print(f"[bold yellow]Validation Accuracy: {val_accuracy:.4f}[/bold yellow]")
         if val_accuracy > best_value:
             best_value = val_accuracy
+            best_epoch = epoch + 1
             trainer.save_model(checkpoint_dir)
             tokenizer.save_pretrained(checkpoint_dir)
 
@@ -357,12 +378,22 @@ def train(
     true_labels = test_result.label_ids
     accuracy = sklearn.metrics.accuracy_score(true_labels, predictions)
     summary = {
+        "Model": model_name,
+        "batch_size": batch_size,
+        "Epochs": epochs,
         "Accuracy": accuracy,
+        "best model in epoch": best_epoch,
         "params": sum(p.numel() for p in best_model.parameters()),
         "params_trainable": sum(p.numel() for p in best_model.parameters() if p.requires_grad)
     }
-    with open(os.path.join(out_dir, "summary.json"), "w") as f:
-        json.dump(summary, f, indent=4)
+    path = os.path.join(out_dir, "summary.json")
+    history = list()
+    if os.path.exists(path):
+        with open(path, "r") as f:
+            history.append(json.load(f))
+    history.append(summary)
+    with open(path, "w") as f:
+        json.dump(history, f, indent=4)
     console.print(f"[bold green]Test Accuracy: {accuracy:.4f}[/bold green]")
 
     try:
@@ -386,7 +417,7 @@ def main():
     parser.add_argument("--max_length", type=int, default=128)
     parser.add_argument("--batch_size", type=int, required=True, default=4)
     parser.add_argument("--epochs", type=int, required=True, default=1)
-    parser.add_argument("--head", type=str, choices=["custom_block", "mlp"], default="mlp")
+    parser.add_argument("--head", type=str, choices=["large", "base"], default="base")
     parser.add_argument("-lr", "--learning_rate", type=float, default=5e-5)
     parser.add_argument("-wd", "--weight_decay", type=float, default=0.01)
     parser.add_argument("-ws", "--warmup_steps", type=int, default=10000)
@@ -410,6 +441,7 @@ def main():
     # start training
     train(
         model_name=args.model_name,
+        head=args.head,
         train_csv=os.path.join(args.out_dir, args.train_csv),
         test_csv=os.path.join(args.out_dir, args.test_csv),
         out_dir=args.out_dir,
