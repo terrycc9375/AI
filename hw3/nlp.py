@@ -265,13 +265,20 @@ def train(
         epochs: int = 1,
         seed: int = 42,
 ):
-    tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_name, use_fast=False)
     test_dataset = datasets.Dataset.from_pandas(pandas.read_csv(test_csv))
     tokenized_test = test_dataset.map(lambda x: tokenizer(x["text"], truncation=True, padding=True, max_length=128), batched=True, remove_columns=["text"])
 
     console.print(f"[bold #de78ba]Using device: {DEVICE}\nUsing model: {model_name}[/bold #de78ba]")
     config = SentimentConfig(model_name=model_name, head=head)
-    model = SentimentClassifier(config).to(DEVICE) # type: ignore
+    # model = SentimentClassifier(config).to(DEVICE) # type: ignore
+    model = transformers.AutoModelForSequenceClassification.from_pretrained(
+        model_name,
+        num_labels=3,
+        problem_type="single-label-classification",
+        torch_dtype=torch.float32,
+        device_map="auto"
+    ).to(DEVICE) # type: ignore
 
     best_value = -1.0
     best_epoch = int(-1)
@@ -347,6 +354,7 @@ def train(
             save_strategy="no",
             seed=seed,
             fp16=torch.cuda.is_available(),
+            bf16=False,
             greater_is_better=True,
             report_to=[],
             # report_to="tensorboard",
@@ -359,7 +367,7 @@ def train(
             train_dataset=tokenized_train,
             eval_dataset=tokenized_valid,
             processing_class=tokenizer,
-            compute_loss_func=torch.nn.CrossEntropyLoss(),
+            # compute_loss_func=torch.nn.CrossEntropyLoss(),
             compute_metrics=lambda p: {
                 "accuracy": (p.predictions.argmax(-1) == p.label_ids).mean() # type: ignore
             },
@@ -383,7 +391,7 @@ def train(
         if val_accuracy > best_value:
             best_value = val_accuracy
             best_epoch = epoch + 1
-            best_model = model
+            # best_model = model
             trainer.save_model(checkpoint_dir)
             tokenizer.save_pretrained(checkpoint_dir)
 
@@ -411,7 +419,7 @@ def train(
 
     with open(f"./logs/{model_name}.txt", 'a+') as log:
         log.write(f"val_acc = {validation_accuracy_record}")
-        log.write(f"test_acc = {test_accuracy_record}")
+        log.write(f"test_acc = {test_accuracy_record}\n")
 
     del model, tokenizer
     gc.collect()
