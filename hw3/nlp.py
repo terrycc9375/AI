@@ -409,9 +409,9 @@ def train(
     with open(path, "w") as f:
         json.dump(history, f, indent=4)
 
-    with open("./logs/log.txt", 'r') as log:
-        log.write(f"{validation_accuracy_record}")
-        log.write(f"{test_accuracy_record}")
+    with open(f"./logs/{model_name}.txt", 'a+') as log:
+        log.write(f"val_acc = {validation_accuracy_record}")
+        log.write(f"test_acc = {test_accuracy_record}")
 
     del model, tokenizer
     gc.collect()
