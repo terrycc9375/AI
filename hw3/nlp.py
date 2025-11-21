@@ -395,7 +395,7 @@ def train(
         "Model": model_name,
         "batch_size": batch_size,
         "Epochs": epochs,
-        "Accuracy": accuracy,
+        "Accuracy": f"{accuracy:.4f}",
         "best model in epoch": best_epoch,
         "params": sum(p.numel() for p in model.parameters()),
         "params_trainable": sum(p.numel() for p in model.parameters() if p.requires_grad)
