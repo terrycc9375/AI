@@ -116,6 +116,33 @@ class SentimentClassifier(transformers.PreTrainedModel):
 
     def __init__(self, config: SentimentConfig):
         super().__init__(config)
+        self.config = config
+        self.model = transformers.AutoModelForSequenceClassification.from_pretrained(
+            config.model_name,
+            num_labels=config.num_labels,
+            problem_type="single_label_classification",
+            torch_dtype=torch.float32,
+            device_map="auto"
+        )
+
+    def forward(self, *args, **kwargs):
+        kwargs.pop("num_items_in_batch", None)
+        return self.model(*args, **kwargs)
+    
+    def save_pretrained(self, save_directory, **kwargs):
+        super().save_pretrained(save_directory, **kwargs)
+        self.model.save_pretrained(save_directory, **kwargs)
+
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+        config = transformers.AutoConfig.from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+        instance = cls(config)
+        instance.model = transformers.AutoModelForSequenceClassification.from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+        return instance
+
+    """
+    def __init__(self, config: SentimentConfig):
+        super().__init__(config)
         self.bert = transformers.AutoModel.from_pretrained(config.model_name)
         self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
         if config.head == "base":
@@ -158,6 +185,7 @@ class SentimentClassifier(transformers.PreTrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions
         )
+        """
 
 console = rich.console.Console()
 class RichProgressCallback(transformers.TrainerCallback):
@@ -267,18 +295,18 @@ def train(
 ):
     tokenizer = transformers.AutoTokenizer.from_pretrained(model_name, use_fast=False)
     test_dataset = datasets.Dataset.from_pandas(pandas.read_csv(test_csv))
-    tokenized_test = test_dataset.map(lambda x: tokenizer(x["text"], truncation=True, padding=True, max_length=128), batched=True, remove_columns=["text"])
+    tokenized_test = test_dataset.map(lambda x: {**tokenizer(x["text"], truncation=True, padding=True, max_length=128), "labels": x["label"]}, batched=True, remove_columns=test_dataset.column_names)
 
     console.print(f"[bold #de78ba]Using device: {DEVICE}\nUsing model: {model_name}[/bold #de78ba]")
     config = SentimentConfig(model_name=model_name, head=head)
-    # model = SentimentClassifier(config).to(DEVICE) # type: ignore
-    model = transformers.AutoModelForSequenceClassification.from_pretrained(
-        model_name,
-        num_labels=3,
-        problem_type="single-label-classification",
-        torch_dtype=torch.float32,
-        device_map="auto"
-    ).to(DEVICE) # type: ignore
+    model = SentimentClassifier(config).to(DEVICE) # type: ignore
+    # model = transformers.AutoModelForSequenceClassification.from_pretrained(
+    #     model_name,
+    #     num_labels=3,
+    #     problem_type="single_label_classification",
+    #     torch_dtype=torch.float32,
+    #     device_map="auto"
+    # ).to(DEVICE) # type: ignore
 
     best_value = -1.0
     best_epoch = int(-1)
@@ -298,11 +326,11 @@ def train(
                 kwargs["callbacks"] = []
             super().__init__(*args, **kwargs)
             
-        def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-            labels = inputs.pop("labels")
-            outputs = model(**inputs)
-            loss = torch.nn.CrossEntropyLoss()(outputs.logits, labels) if labels is not None else None
-            return (loss, outputs) if return_outputs else loss
+        # def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        #     labels = inputs.pop("labels")
+        #     outputs = model(**inputs)
+        #     loss = torch.nn.CrossEntropyLoss()(outputs.logits, labels) if labels is not None else None
+        #     return (loss, outputs) if return_outputs else loss
         
         def log(self, logs, start_time: typing.Optional[float] = None): # type: ignore
             if self.state.epoch is not None:
@@ -333,8 +361,8 @@ def train(
         )
         train_dataset = datasets.Dataset.from_pandas(train_set)
         valid_dataset = datasets.Dataset.from_pandas(valid_set)
-        tokenized_train = train_dataset.map(lambda x: tokenizer(x["text"], truncation=True, padding=True, max_length=128), batched=True, remove_columns=["text"])
-        tokenized_valid = valid_dataset.map(lambda x: tokenizer(x["text"], truncation=True, padding=True, max_length=128), batched=True, remove_columns=["text"])
+        tokenized_train = train_dataset.map(lambda x: {**tokenizer(x["text"], truncation=True, padding=True, max_length=128), "labels": x["label"]}, batched=True, remove_columns=train_dataset.column_names)
+        tokenized_valid = valid_dataset.map(lambda x: {**tokenizer(x["text"], truncation=True, padding=True, max_length=128), "labels": x["label"]}, batched=True, remove_columns=valid_dataset.column_names)
 
         training_arguments = transformers.TrainingArguments(
             output_dir=out_dir,
@@ -358,7 +386,8 @@ def train(
             greater_is_better=True,
             report_to=[],
             # report_to="tensorboard",
-            disable_tqdm=True
+            disable_tqdm=True,
+            remove_unused_columns=False
         )
 
         trainer = SentimentTrainer(
