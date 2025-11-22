@@ -412,13 +412,13 @@ def train(
     history = list()
     if os.path.exists(path):
         with open(path, "r") as f:
-            history.append(json.load(f))
+            history.extend(json.load(f))
     history.append(summary)
     with open(path, "w") as f:
         json.dump(history, f, indent=4)
 
     with open(f"./logs/{model_name}.txt", 'a+') as log:
-        log.write(f"val_acc = {validation_accuracy_record}")
+        log.write(f"val_acc = {validation_accuracy_record}\n")
         log.write(f"test_acc = {test_accuracy_record}\n")
 
     del model, tokenizer
