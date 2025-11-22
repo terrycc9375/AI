@@ -1,0 +1,38 @@
+[
+    {
+        "Model": "bert-large-uncased",
+        "batch_size": 16,
+        "Epochs": 40,
+        "Accuracy": "0.809",
+        "best model in epoch": 31,
+        "params": 339346435,
+        "params_trainable": 339346435
+    },
+    {
+        "Model": "bert-base-uncased",
+        "batch_size": 16,
+        "Epochs": 40,
+        "Accuracy": "0.7920",
+        "best model in epoch": 36,
+        "params": 111849219,
+        "params_trainable": 111849219
+    },
+    {
+        "Model": "microsoft/deberta-v3-base",
+        "batch_size": 16,
+        "Epochs": 40,
+        "Accuracy": "0.8022",
+        "best model in epoch": 3,
+        "params": 184424451,
+        "params_trainable": 184424451
+    },
+    {
+        "Model": "microsoft/deberta-v3-large",
+        "batch_size": 8,
+        "Epochs": 4,
+        "Accuracy": "0.8190",
+        "best model in epoch": 4,
+        "params": 435064835,
+        "params_trainable": 435064835
+    }
+]
