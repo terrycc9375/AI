@@ -4,3 +4,4 @@ venv/
 saved_models/
 __pycache__/
 *bfg*/
+checkpoint/
