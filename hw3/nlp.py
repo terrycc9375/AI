@@ -417,7 +417,7 @@ def train(
     with open(path, "w") as f:
         json.dump(history, f, indent=4)
 
-    with open(f"./logs/{model_name}.txt", 'a+') as log:
+    with open(f"./logs/{model_name.replace('/', '-')}.txt", 'a+') as log:
         log.write(f"val_acc = {validation_accuracy_record}")
         log.write(f"test_acc = {test_accuracy_record}\n")
 
