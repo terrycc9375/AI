@@ -129,14 +129,14 @@ class SentimentClassifier(transformers.PreTrainedModel):
         kwargs.pop("num_items_in_batch", None)
         return self.model(*args, **kwargs)
     
-    def save_pretrained(self, save_directory, **kwargs):
+    def save_pretrained(self, save_directory, **kwargs): # type: ignore
         super().save_pretrained(save_directory, **kwargs)
         self.model.save_pretrained(save_directory, **kwargs)
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
         config = transformers.AutoConfig.from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
-        instance = cls(config)
+        instance = cls(config) # type: ignore
         instance.model = transformers.AutoModelForSequenceClassification.from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
         return instance
 
@@ -294,8 +294,14 @@ def train(
         seed: int = 42,
 ):
     tokenizer = transformers.AutoTokenizer.from_pretrained(model_name, use_fast=False)
-    test_dataset = datasets.Dataset.from_pandas(pandas.read_csv(test_csv))
-    tokenized_test = test_dataset.map(lambda x: {**tokenizer(x["text"], truncation=True, padding=True, max_length=128), "labels": x["label"]}, batched=True, remove_columns=test_dataset.column_names)
+    test_datafile = pandas.read_csv(test_csv)
+    true_labels = test_datafile["label"].values
+    test_dataset = datasets.Dataset.from_pandas(test_datafile)
+    tokenized_test = test_dataset.map(
+        lambda x: tokenizer(x["text"], truncation=True, padding=True, max_length=128),
+        batched=True,
+        remove_columns=["text", "id"]
+    )
 
     console.print(f"[bold #de78ba]Using device: {DEVICE}\nUsing model: {model_name}[/bold #de78ba]")
     config = SentimentConfig(model_name=model_name, head=head)
@@ -359,6 +365,7 @@ def train(
             shuffle=True,
             stratify=data_frame["label"]
         )
+        valid_labels = valid_set["label"].to_numpy()
         train_dataset = datasets.Dataset.from_pandas(train_set)
         valid_dataset = datasets.Dataset.from_pandas(valid_set)
         tokenized_train = train_dataset.map(lambda x: {**tokenizer(x["text"], truncation=True, padding=True, max_length=128), "labels": x["label"]}, batched=True, remove_columns=train_dataset.column_names)
@@ -406,13 +413,18 @@ def train(
         trainer.train()
 
         # validation
-        val_metrics = trainer.evaluate()
-        val_accuracy = val_metrics.get("eval_accuracy", -1.0)
+        # val_metrics = trainer.evaluate(compute_metrics=trainer.compute_metrics)
+        # val_accuracy = val_metrics.get("eval_accuracy", -1.0)
+        val_metrics = trainer.predict(tokenized_valid) # type: ignore
+        logits = val_metrics.predictions[1].argmax(-1) # type: ignore
+        val_accuracy = sklearn.metrics.accuracy_score(valid_labels, logits) # type: ignore
         validation_accuracy_record.append(val_accuracy)
+
 
         # testing
         test_metrics = trainer.predict(tokenized_test) # type: ignore
-        test_accuracy = sklearn.metrics.accuracy_score(tokenized_test["label"], test_metrics.predictions.argmax(-1)) # type: ignore
+        logits = test_metrics.predictions[1].argmax(-1) # type: ignore
+        test_accuracy = sklearn.metrics.accuracy_score(true_labels, logits) # type: ignore
         test_accuracy_record.append(test_accuracy)
 
         console.print(f"[bold #b3c267]Validation Accuracy: {val_accuracy:.4f}[/] / [bold #74cfc1]Testing Accuracy: {test_accuracy:.4f}[/]")
