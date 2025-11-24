@@ -52,5 +52,14 @@
         "best model in epoch": 3,
         "params": 435064835,
         "params_trainable": 435064835
+    },
+    {
+        "Model": "FacebookAI/roberta-large",
+        "batch_size": 8,
+        "Epochs": 16,
+        "Accuracy": "0.8167",
+        "best model in epoch": 2,
+        "params": 355362819,
+        "params_trainable": 355362819
     }
 ]
