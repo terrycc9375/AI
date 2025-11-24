@@ -34,5 +34,23 @@
         "best model in epoch": 4,
         "params": 435064835,
         "params_trainable": 435064835
+    },
+    {
+        "Model": "microsoft/deberta-v3-base",
+        "batch_size": 16,
+        "Epochs": 1,
+        "Accuracy": "0.7782",
+        "best model in epoch": 1,
+        "params": 184424451,
+        "params_trainable": 184424451
+    },
+    {
+        "Model": "microsoft/deberta-v3-large",
+        "batch_size": 4,
+        "Epochs": 16,
+        "Accuracy": "0.8278",
+        "best model in epoch": 3,
+        "params": 435064835,
+        "params_trainable": 435064835
     }
 ]
