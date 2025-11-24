@@ -1,1 +1,1 @@
-python nlp.py --epochs 16 --batch_size 8 --seed 42 --model_name "FacebookAI/roberta-large" --head "large"
+python nlp.py --epochs 10 --batch_size 32 --seed 42 --model_name "vinai/bertweet-base" --head "large"

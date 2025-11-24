@@ -61,5 +61,14 @@
         "best model in epoch": 2,
         "params": 355362819,
         "params_trainable": 355362819
+    },
+    {
+        "Model": "vinai/bertweet-base",
+        "batch_size": 32,
+        "Epochs": 10,
+        "Accuracy": "0.8095",
+        "best model in epoch": 4,
+        "params": 134902275,
+        "params_trainable": 134902275
     }
 ]
