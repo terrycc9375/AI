@@ -376,13 +376,13 @@ def train(
             eval_strategy="epoch",
             per_device_train_batch_size=batch_size,
             per_device_eval_batch_size=batch_size * 2,
-            learning_rate=1e-5, # based: 3e-5 ~ 5e-5, large: 1e-5 ~ 3e-5
-            weight_decay=0.01, # large
-            max_grad_norm=1.0, #large
-            lr_scheduler_type="cosine", # large
-            warmup_ratio=0.1, # large
+            # learning_rate=1e-5, # based: 3e-5 ~ 5e-5, large: 1e-5 ~ 3e-5
+            # weight_decay=0.01, # large
+            # max_grad_norm=1.0, #large
+            # lr_scheduler_type="cosine", # large
+            # warmup_ratio=0.1, # large
             num_train_epochs=1,
-            logging_dir="./logs",
+            # logging_dir="./logs",
             logging_strategy="steps",
             logging_first_step=True,
             logging_steps=10,
@@ -390,7 +390,7 @@ def train(
             seed=seed,
             fp16=torch.cuda.is_available(),
             bf16=False,
-            greater_is_better=True,
+            # greater_is_better=True,
             report_to=[],
             # report_to="tensorboard",
             disable_tqdm=True,
@@ -432,7 +432,6 @@ def train(
         if val_accuracy > best_value:
             best_value = val_accuracy
             best_epoch = epoch + 1
-            # best_model = model
             trainer.save_model(checkpoint_dir)
             tokenizer.save_pretrained(checkpoint_dir)
 

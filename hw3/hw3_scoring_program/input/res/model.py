@@ -5,7 +5,7 @@ class SentimentConfig(transformers.PretrainedConfig):
     model_type = "sentiment_model"
     def __init__(
             self,
-            model_name: str = "microsoft/deberta-v3-large",
+            model_name: str = "vinai/bertweet-base",
             num_labels: int = 3,
             head: str = "mlp",
             **kwargs
@@ -18,7 +18,7 @@ class SentimentConfig(transformers.PretrainedConfig):
         super().__init__(**config_dict)
         self.head = head
         self.model_name = model_name
-        self.architectures = ["DebertaV2ForSequenceClassification"]
+        self.architectures = ["RobertaForSequenceClassification"]
 
 class SentimentClassifier(transformers.AutoModelForSequenceClassification, transformers.PreTrainedModel):
     config_class = SentimentConfig
