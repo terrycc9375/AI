@@ -140,53 +140,6 @@ class SentimentClassifier(transformers.PreTrainedModel):
         instance.model = transformers.AutoModelForSequenceClassification.from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
         return instance
 
-    """
-    def __init__(self, config: SentimentConfig):
-        super().__init__(config)
-        self.bert = transformers.AutoModel.from_pretrained(config.model_name)
-        self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
-        if config.head == "base":
-            self.classifier = torch.nn.Linear(config.hidden_size, config.num_labels)
-        elif config.head == "large":
-            self.classifier = BertLargeMLP(config)
-        
-        #initialize weights
-        self.post_init()
-
-    def forward(
-            self,
-            input_ids=None,
-            attention_mask=None,
-            token_type_ids=None,
-            labels=None,
-            **kwargs
-    ):
-        # allowed_kwargs = ["output_attentions", "output_hidden_states", "return_dict", "head_mask", "inputs_embeds"]
-        # bert_kwargs = {k: v for k, v in kwargs.items() if k in allowed_kwargs}
-        kwargs.pop("num_items_in_batch", None)  # sol.1 remove unexpected kwarg
-        outputs = self.bert(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            **{k: v for k, v in kwargs.items() if k in ["output_attentions", "output_hidden_states"]}
-        )
-        pooled_output = outputs[1]
-        pooled_output = self.dropout(pooled_output)
-        logits = self.classifier(pooled_output)
-
-        loss = None
-        if labels is not None:
-            loss_function = torch.nn.CrossEntropyLoss()
-            loss = loss_function(logits.view(-1, self.config.num_labels), labels.view(-1))
-
-        return transformers.modeling_outputs.SequenceClassifierOutput(
-            loss=loss,
-            logits=logits,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions
-        )
-        """
-
 console = rich.console.Console()
 class RichProgressCallback(transformers.TrainerCallback):
     def __init__(self, current_epoch: int, total_epochs: int):
@@ -293,12 +246,28 @@ def train(
         epochs: int = 1,
         seed: int = 42,
 ):
-    tokenizer = transformers.AutoTokenizer.from_pretrained(model_name, use_fast=False)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_name, use_fast=False, normalization=True)
+    tokenizer.model_max_length = 128
     test_datafile = pandas.read_csv(test_csv)
     true_labels = test_datafile["label"].values
     test_dataset = datasets.Dataset.from_pandas(test_datafile)
+
+    def safe_tokenize(x):
+        batch = tokenizer(
+            x["text"],
+            truncation=True,
+            padding=False,
+            add_special_tokens=True
+        )
+        batch["input_ids"] = [
+            [tid if 0 <= tid < len(tokenizer) else tokenizer.unk_token_id for tid in seq] for seq in batch["input_ids"]
+        ]
+        batch["labels"] = x["label"]
+        return batch
+
     tokenized_test = test_dataset.map(
-        lambda x: tokenizer(x["text"], truncation=True, padding=True, max_length=128),
+        # lambda x: tokenizer(x["text"], truncation=True, padding=True, max_length=max_length),
+        safe_tokenize,
         batched=True,
         remove_columns=["text", "id"]
     )
@@ -306,21 +275,12 @@ def train(
     console.print(f"[bold #de78ba]Using device: {DEVICE}\nUsing model: {model_name}[/bold #de78ba]")
     config = SentimentConfig(model_name=model_name, head=head)
     model = SentimentClassifier(config).to(DEVICE) # type: ignore
-    # model = transformers.AutoModelForSequenceClassification.from_pretrained(
-    #     model_name,
-    #     num_labels=3,
-    #     problem_type="single_label_classification",
-    #     torch_dtype=torch.float32,
-    #     device_map="auto"
-    # ).to(DEVICE) # type: ignore
 
     best_value = -1.0
     best_epoch = int(-1)
     checkpoint_dir = os.path.join(out_dir, "checkpoint")
     os.makedirs(checkpoint_dir, exist_ok=True)
     tokenizer.save_pretrained(checkpoint_dir)
-
-    # print("Initialize successful")
 
     class SentimentTrainer(transformers.Trainer):
         def __init__(self, *args, **kwargs):
@@ -331,12 +291,6 @@ def train(
             else: 
                 kwargs["callbacks"] = []
             super().__init__(*args, **kwargs)
-            
-        # def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-        #     labels = inputs.pop("labels")
-        #     outputs = model(**inputs)
-        #     loss = torch.nn.CrossEntropyLoss()(outputs.logits, labels) if labels is not None else None
-        #     return (loss, outputs) if return_outputs else loss
         
         def log(self, logs, start_time: typing.Optional[float] = None): # type: ignore
             if self.state.epoch is not None:
@@ -368,8 +322,8 @@ def train(
         valid_labels = valid_set["label"].to_numpy()
         train_dataset = datasets.Dataset.from_pandas(train_set)
         valid_dataset = datasets.Dataset.from_pandas(valid_set)
-        tokenized_train = train_dataset.map(lambda x: {**tokenizer(x["text"], truncation=True, padding=True, max_length=128), "labels": x["label"]}, batched=True, remove_columns=train_dataset.column_names)
-        tokenized_valid = valid_dataset.map(lambda x: {**tokenizer(x["text"], truncation=True, padding=True, max_length=128), "labels": x["label"]}, batched=True, remove_columns=valid_dataset.column_names)
+        tokenized_train = train_dataset.map(safe_tokenize, batched=True, remove_columns=train_dataset.column_names)
+        tokenized_valid = valid_dataset.map(safe_tokenize, batched=True, remove_columns=valid_dataset.column_names)
 
         training_arguments = transformers.TrainingArguments(
             output_dir=out_dir,

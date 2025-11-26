@@ -88,5 +88,59 @@
         "best model in epoch": 2,
         "params": 134902275,
         "params_trainable": 134902275
+    },
+    {
+        "Model": "vinai/bertweet-base",
+        "batch_size": 32,
+        "Epochs": 5,
+        "Accuracy": "0.8363",
+        "best model in epoch": 3,
+        "params": 134902275,
+        "params_trainable": 134902275
+    },
+    {
+        "Model": "vinai/bertweet-base",
+        "batch_size": 32,
+        "Epochs": 5,
+        "Accuracy": "0.8398",
+        "best model in epoch": 2,
+        "params": 134902275,
+        "params_trainable": 134902275
+    },
+    {
+        "Model": "vinai/bertweet-base",
+        "batch_size": 32,
+        "Epochs": 5,
+        "Accuracy": "0.8387",
+        "best model in epoch": 2,
+        "params": 134902275,
+        "params_trainable": 134902275
+    },
+    {
+        "Model": "vinai/bertweet-base",
+        "batch_size": 32,
+        "Epochs": 5,
+        "Accuracy": "0.8413",
+        "best model in epoch": 2,
+        "params": 134902275,
+        "params_trainable": 134902275
+    },
+    {
+        "Model": "vinai/bertweet-base",
+        "batch_size": 32,
+        "Epochs": 5,
+        "Accuracy": "0.8370",
+        "best model in epoch": 2,
+        "params": 134902275,
+        "params_trainable": 134902275
+    },
+    {
+        "Model": "vinai/bertweet-large",
+        "batch_size": 16,
+        "Epochs": 4,
+        "Accuracy": "0.3333",
+        "best model in epoch": 1,
+        "params": 355362819,
+        "params_trainable": 355362819
     }
 ]
