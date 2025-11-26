@@ -330,11 +330,11 @@ def train(
             eval_strategy="epoch",
             per_device_train_batch_size=batch_size,
             per_device_eval_batch_size=batch_size * 2,
-            # learning_rate=1e-5, # based: 3e-5 ~ 5e-5, large: 1e-5 ~ 3e-5
-            # weight_decay=0.01, # large
-            # max_grad_norm=1.0, #large
-            # lr_scheduler_type="cosine", # large
-            # warmup_ratio=0.1, # large
+            learning_rate=1e-5, # based: 3e-5 ~ 5e-5, large: 1e-5 ~ 3e-5
+            weight_decay=0.01, # large
+            max_grad_norm=1.0, #large
+            lr_scheduler_type="cosine", # large
+            warmup_ratio=0.1, # large
             num_train_epochs=1,
             # logging_dir="./logs",
             logging_strategy="steps",
@@ -357,7 +357,6 @@ def train(
             train_dataset=tokenized_train,
             eval_dataset=tokenized_valid,
             processing_class=tokenizer,
-            # compute_loss_func=torch.nn.CrossEntropyLoss(),
             compute_metrics=lambda p: {
                 "accuracy": (p.predictions.argmax(-1) == p.label_ids).mean() # type: ignore
             },
@@ -367,8 +366,6 @@ def train(
         trainer.train()
 
         # validation
-        # val_metrics = trainer.evaluate(compute_metrics=trainer.compute_metrics)
-        # val_accuracy = val_metrics.get("eval_accuracy", -1.0)
         val_metrics = trainer.predict(tokenized_valid) # type: ignore
         logits = val_metrics.predictions[1].argmax(-1) # type: ignore
         val_accuracy = sklearn.metrics.accuracy_score(valid_labels, logits) # type: ignore

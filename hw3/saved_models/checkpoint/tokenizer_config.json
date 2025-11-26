@@ -1,58 +1,60 @@
 {
-  "add_prefix_space": false,
   "added_tokens_decoder": {
     "0": {
-      "content": "<s>",
+      "content": "[PAD]",
       "lstrip": false,
-      "normalized": true,
+      "normalized": false,
       "rstrip": false,
       "single_word": false,
       "special": true
     },
     "1": {
-      "content": "<pad>",
+      "content": "[CLS]",
       "lstrip": false,
-      "normalized": true,
+      "normalized": false,
       "rstrip": false,
       "single_word": false,
       "special": true
     },
     "2": {
-      "content": "</s>",
+      "content": "[SEP]",
       "lstrip": false,
-      "normalized": true,
+      "normalized": false,
       "rstrip": false,
       "single_word": false,
       "special": true
     },
     "3": {
-      "content": "<unk>",
+      "content": "[UNK]",
       "lstrip": false,
       "normalized": true,
       "rstrip": false,
       "single_word": false,
       "special": true
     },
-    "50264": {
-      "content": "<mask>",
-      "lstrip": true,
+    "128000": {
+      "content": "[MASK]",
+      "lstrip": false,
       "normalized": false,
       "rstrip": false,
       "single_word": false,
       "special": true
     }
   },
-  "bos_token": "<s>",
+  "bos_token": "[CLS]",
   "clean_up_tokenization_spaces": false,
-  "cls_token": "<s>",
-  "eos_token": "</s>",
-  "errors": "replace",
+  "cls_token": "[CLS]",
+  "do_lower_case": false,
+  "eos_token": "[SEP]",
   "extra_special_tokens": {},
-  "mask_token": "<mask>",
+  "mask_token": "[MASK]",
   "model_max_length": 128,
   "normalization": true,
-  "pad_token": "<pad>",
-  "sep_token": "</s>",
-  "tokenizer_class": "RobertaTokenizer",
-  "unk_token": "<unk>"
+  "pad_token": "[PAD]",
+  "sep_token": "[SEP]",
+  "sp_model_kwargs": {},
+  "split_by_punct": false,
+  "tokenizer_class": "DebertaV2Tokenizer",
+  "unk_token": "[UNK]",
+  "vocab_type": "spm"
 }

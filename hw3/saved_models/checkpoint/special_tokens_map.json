@@ -1,48 +1,12 @@
 {
-  "bos_token": {
-    "content": "<s>",
-    "lstrip": false,
-    "normalized": true,
-    "rstrip": false,
-    "single_word": false
-  },
-  "cls_token": {
-    "content": "<s>",
-    "lstrip": false,
-    "normalized": true,
-    "rstrip": false,
-    "single_word": false
-  },
-  "eos_token": {
-    "content": "</s>",
-    "lstrip": false,
-    "normalized": true,
-    "rstrip": false,
-    "single_word": false
-  },
-  "mask_token": {
-    "content": "<mask>",
-    "lstrip": true,
-    "normalized": false,
-    "rstrip": false,
-    "single_word": false
-  },
-  "pad_token": {
-    "content": "<pad>",
-    "lstrip": false,
-    "normalized": true,
-    "rstrip": false,
-    "single_word": false
-  },
-  "sep_token": {
-    "content": "</s>",
-    "lstrip": false,
-    "normalized": true,
-    "rstrip": false,
-    "single_word": false
-  },
+  "bos_token": "[CLS]",
+  "cls_token": "[CLS]",
+  "eos_token": "[SEP]",
+  "mask_token": "[MASK]",
+  "pad_token": "[PAD]",
+  "sep_token": "[SEP]",
   "unk_token": {
-    "content": "<unk>",
+    "content": "[UNK]",
     "lstrip": false,
     "normalized": true,
     "rstrip": false,
