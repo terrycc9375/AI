@@ -1,4 +1,4 @@
-from ultralytics import YOLO
+from ultralytics import YOLO # type:ignore
 import os
 import yaml
 import tempfile
