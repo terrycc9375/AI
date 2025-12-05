@@ -9,4 +9,3 @@ scoring_program/
 best_model/
 res/
 dataset/
-*.pt
