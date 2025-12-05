@@ -2,7 +2,9 @@ from ultralytics.models.yolo.model import YOLO
 from ultralytics.engine.trainer import BaseTrainer
 import rich, rich.progress
 import time
+import argparse
 
+console = rich.console.Console()
 class RichProgressCallback:
     def __init__(self):
         self.progress = rich.progress.Progress(
@@ -16,7 +18,7 @@ class RichProgressCallback:
 		)
         
         self.task_id = None
-        self.start_time = None
+        self.start_time = float()
         
     def on_train_start(self, trainer: BaseTrainer):
         self.task_id = self.progress.add_task(
@@ -25,12 +27,27 @@ class RichProgressCallback:
             total=trainer.epochs
         )
         self.progress.start()
+        self.start_time = time.time()
+
+    def on_fit_epoch_end(self, trainer: BaseTrainer):
+        elapsed = time.time() - self.start_time
+        current_epoch = trainer.epoch
+        self.progress.update(
+            self.task_id, # type: ignore
+            total=trainer.epochs,
+            completed=current_epoch + 1,
+            epoch=current_epoch + 1,
+            advance=1
+        ) 
 
     def on_train_end(self, trainer: BaseTrainer):
-        self.progress.update(self.task_id, completed=trainer.epochs)
+        self.progress.update(self.task_id, completed=trainer.epochs) # type: ignore
         self.progress.stop()
+        console.print(f"\n[bold magenta]Training complete.\n[bold #6edba1]")
 
-def train():
+def train(
+    epochs: int = 4,
+):
     model = YOLO("yolo8n.pt")
     root = r"D:/NYCU/AI/hw4/dataset/images"
     data = {
@@ -42,7 +59,7 @@ def train():
 	}
     training_logs = model.train(
 		data=data,
-		epoch=4,
+		epoch=epochs,
 		batch=16,
 		imgsz=320,
 		project="YOLOv8",
@@ -52,7 +69,13 @@ def train():
 	)
 
 def main():
-    pass
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--epoch", type=int, default=100)
+    parser.add_argument("--out", type=str, default="test")
+    argv = parser.parse_args()
+    train(
+        argv.epoch,
+    )
 
 if __name__ == "__main__":
     main()
