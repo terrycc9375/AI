@@ -48,7 +48,7 @@ class RichProgressCallback:
 def train(
     epochs: int = 4,
 ):
-    model = YOLO("yolo8n.pt")
+    model = YOLO("yolov8n.pt")
     root = r"D:/NYCU/AI/hw4/dataset/images"
     data = {
 		"nc": 1,
@@ -59,7 +59,7 @@ def train(
 	}
     training_logs = model.train(
 		data=data,
-		epoch=epochs,
+		epochs=epochs,
 		batch=16,
 		imgsz=320,
 		project="YOLOv8",
