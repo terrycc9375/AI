@@ -1,9 +1,15 @@
-from ultralytics import YOLO # type:ignore
+from ultralytics.models.yolo.model import YOLO
+from ultralytics.engine.trainer import BaseTrainer
 import os
+import time
+import argparse
 import yaml
 import tempfile
 
-os.environ['WANDB_MODE'] = 'disabled'
+# Data Augmentation
+import albumentations as A
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 def dict_to_temp_yaml(cfg: dict):
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.yaml')
@@ -11,96 +17,61 @@ def dict_to_temp_yaml(cfg: dict):
         yaml.dump(cfg, f, sort_keys=False, allow_unicode=True)
     return tmp.name
 
-# -------------------------------------------------------------
-# 1.YOLO11原始架構
-# -------------------------------------------------------------
-yolo11_arch = {
-    'nc': 1,
-    'scales': {
-        'n': [0.50, 0.25, 1024],
-        's': [0.50, 0.50, 1024],
-    },
-    'backbone': [
-        [-1, 1, 'Conv',   [64, 3, 2]],
-        [-1, 1, 'Conv',   [128, 3, 2]],
-        [-1, 2, 'C3k2',   [256, False, 0.25]],
-        [-1, 1, 'Conv',   [256, 3, 2]],
-        [-1, 2, 'C3k2',   [512, False, 0.25]],
-        [-1, 1, 'Conv',   [512, 3, 2]],
-        [-1, 2, 'C3k2',   [512, True]],
-        [-1, 1, 'Conv',   [1024, 3, 2]],
-        [-1, 2, 'C3k2',   [1024, True]],
-        [-1, 1, 'SPPF',   [1024, 5]],
-        [-1, 2, 'C2PSA',  [1024]],
-    ],
-    'head': [
-        [-1, 1, 'nn.Upsample', [None, 2, "nearest"]],
-        [[-1, 6], 1, 'Concat', [1]],
-        [-1, 2, 'C3k2', [512, False]],
+def train(
+    epochs: int = 10,
+):
+    model = YOLO("yolo11s.pt")
+    root = r"D:\NYCU\AI\hw4\dataset"
+    data = {
+		"nc": 1,
+		"names": ["pig"],
+		"train": os.path.join(root, "images\\train"),
+		"val": os.path.join(root, "images\\test"),
+	}
+    yaml_data = dict_to_temp_yaml(data)
 
-        [-1, 1, 'nn.Upsample', [None, 2, "nearest"]],
-        [[-1, 4], 1, 'Concat', [1]],
-        [-1, 2, 'C3k2', [256, False]],
+    aug = A.Compose(
+        [
+            A.GaussNoise(var_limit=(10.0, 50.0), mean=0, p=0.5),
+            A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.5),
+            A.Blur(blur_limit=5, p=0.3),
+        ],
+        bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels'])
+    )
+    
+    # richcb = RichProgressCallback()
+    # model.add_callback("on_train_start", richcb.on_train_start)
+    # model.add_callback("on_train_epoch_start", richcb.on_train_epoch_start)
+    # model.add_callback("on_train_batch_end", richcb.on_train_batch_end)
+    # model.add_callback("on_train_batch_end", richcb.on_train_batch_end)
+    # model.add_callback("on_train_end", richcb.on_train_end)
+    
+    training_logs = model.train(
+		data=yaml_data,
+		epochs=epochs,
+		batch=4,
+		imgsz=1280,
+		project="YOLO11",
+		name="ep10",
+		exist_ok=True,
+		device="0",
+        workers=0,
 
-        [-1, 1, 'Conv', [256, 3, 2]],
-        [[-1, 13], 1, 'Concat', [1]],
-        [-1, 2, 'C3k2', [512, False]],
+        # hsv_h=0.015,
+        # hsv_s=0.5,
+        # hsv_v=0.3,
+        # augmentations=aug,
+        # augment=True,
+	)
 
-        [-1, 1, 'Conv', [512, 3, 2]],
-        [[-1, 10], 1, 'Concat', [1]],
-        [-1, 2, 'C3k2', [1024, True]],
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--epoch", type=int, default=10)
+    parser.add_argument("--out", type=str, default="test")
+    argv = parser.parse_args()
+    train(
+        argv.epoch,
+    )
 
-        [[16, 19, 22], 1, 'Detect', ['nc']]
-    ]
-}
-
-# -------------------------------------------------------------
-# 2.Dataset設定
-# -------------------------------------------------------------
-DATA_ROOT = r"請輸入你Dataset絕對路徑"  # ← 請改這裡(必要)
-DATA_ROOT = DATA_ROOT.replace("\\", "/")
-
-data_dict = {
-    'train': f"{DATA_ROOT}/train/images",
-    'val':   f"{DATA_ROOT}/test/images",
-    'test':  f"{DATA_ROOT}/test/images",
-    'nc': 1,
-    'names': ['pig']
-}
-
-# -------------------------------------------------------------
-# 3.YAML
-# -------------------------------------------------------------
-model_yaml_path = dict_to_temp_yaml(yolo11_arch)
-data_yaml_path = dict_to_temp_yaml(data_dict)
-
-# -------------------------------------------------------------
-# 4.建立Model
-# -------------------------------------------------------------
-model = YOLO(model_yaml_path)
-
-# -------------------------------------------------------------
-# 5.Train
-# -------------------------------------------------------------
-results = model.train(
-    data=data_yaml_path, #Dataset配置
-    epochs=10, #Tain回合次數
-    batch=16, #Batch Size (建議依你的GPU VRAM做調整)
-    imgsz=320, #Input Image Resolution
-    scale=0.5,
-    mosaic=0.5,
-    mixup=0.1,
-    copy_paste=0.1,
-    pretrained=False,
-    #device="0",　＃有ＧＰＵ才需使用 (注意)
-    workers=0,
-    name="baseline_yolo11",
-    save_period=10 #設定保存checkpoint
-)
-
-# -------------------------------------------------------------
-# 6.Inference
-# -------------------------------------------------------------
-test_image = f"{DATA_ROOT}/test/images/00000001.jpg"
-results = model(test_image)
-results[0].show()
+if __name__ == "__main__":
+    main()
