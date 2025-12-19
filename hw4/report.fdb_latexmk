@@ -1,0 +1,23 @@
+# Fdb version 4
+["pdflatex"] 1765954979.84291 "d:/NYCU/AI/hw4/report.tex" "report.pdf" "report" 1765954980.45175 0
+  "c:/texlive/2025/texmf-dist/fonts/map/fontname/texfonts.map" 1765816585 3524 cb3e574dea2d1052e39280babc910dc8 ""
+  "c:/texlive/2025/texmf-dist/fonts/tfm/public/cm/cmbx12.tfm" 1765814378 1324 c910af8c371558dc20f2d7822f66fe64 ""
+  "c:/texlive/2025/texmf-dist/fonts/tfm/public/cm/cmr12.tfm" 1765814378 1288 655e228510b4c2a1abe905c368440826 ""
+  "c:/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx12.pfb" 1765812607 32080 340ef9bf63678554ee606688e7b5339d ""
+  "c:/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb" 1765812608 35752 024fb6c41858982481f6968b5fc26508 ""
+  "c:/texlive/2025/texmf-dist/tex/latex/base/article.cls" 1765818194 20144 b966087dda3b194755eb460d32e2ef75 ""
+  "c:/texlive/2025/texmf-dist/tex/latex/base/inputenc.sty" 1765818194 5048 0270515b828149155424600fd2d58ac5 ""
+  "c:/texlive/2025/texmf-dist/tex/latex/base/size10.clo" 1765818194 8448 686612a86f0e04f41ea577f5ec7e83d8 ""
+  "c:/texlive/2025/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def" 1765818121 30662 bfd6e864f4ffc5018b0e2b6260c3181c ""
+  "c:/texlive/2025/texmf-dist/web2c/texmf.cnf" 1765812313 42213 4e2ca030e8e2640502016e9e45868dcb ""
+  "c:/texlive/2025/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1765824180 5587484 30eee748fa419a911c40b0c750dd21ba ""
+  "c:/texlive/2025/texmf-var/web2c/pdftex/pdflatex.fmt" 1765824359 3635446 fcd009b06ef26dee21eea634293fabd1 ""
+  "c:/texlive/2025/texmf.cnf" 1765824162 713 e69b156964470283e0530f5060668171 ""
+  "d:/NYCU/AI/hw4/report.tex" 1765954979 558 bad3341671494207098673eb7cd2477f ""
+  "report.aux" 1765954980 556 9f7e1d681c6c78116596cb6eb32a0db3 "pdflatex"
+  "report.tex" 1765954979 558 bad3341671494207098673eb7cd2477f ""
+  (generated)
+  "report.aux"
+  "report.log"
+  "report.pdf"
+  (rewritten before read)

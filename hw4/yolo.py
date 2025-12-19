@@ -7,6 +7,9 @@ import argparse
 import yaml
 import tempfile
 
+# Data Augmentation
+import albumentations as A
+
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 def dict_to_temp_yaml(cfg: dict):
@@ -103,7 +106,7 @@ class RichProgressCallback:
         console.print(f"\n[bold magenta]Training complete.\n[bold #6edba1]")
 
 def train(
-    epochs: int = 4,
+    epochs: int = 10,
 ):
     model = YOLO("yolo11s.pt")
     root = r"D:\NYCU\AI\hw4\dataset"
@@ -114,6 +117,15 @@ def train(
 		"val": os.path.join(root, "images\\test"),
 	}
     yaml_data = dict_to_temp_yaml(data)
+
+    aug = A.Compose(
+        [
+            A.GaussNoise(var_limit=(10.0, 50.0), mean=0, p=0.5),
+            A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.5),
+            A.Blur(blur_limit=5, p=0.3),
+        ],
+        bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels'])
+    )
     
     # richcb = RichProgressCallback()
     # model.add_callback("on_train_start", richcb.on_train_start)
@@ -125,13 +137,19 @@ def train(
     training_logs = model.train(
 		data=yaml_data,
 		epochs=epochs,
-		batch=16,
-		imgsz=640,
+		batch=8,
+		imgsz=1280,
 		project="YOLO11",
-		name="e10",
+		name="ep10",
 		exist_ok=True,
 		device="0",
-        workers=4,
+        workers=0,
+
+        hsv_h=0.015,
+        hsv_s=0.5,
+        hsv_v=0.3,
+        augmentations=aug,
+        augment=True,
 	)
 
 def main():
