@@ -1,0 +1,5 @@
+numpy==1.26.4
+pandas
+torch
+torch_geometric
+rich
