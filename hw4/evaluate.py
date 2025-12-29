@@ -12,13 +12,13 @@ def dict_to_temp_yaml(cfg: dict):
 # ============================================================
 # 1.Dataset設定
 # ============================================================
-DATA_ROOT = r"請輸入你Dataset絕對路徑"       # ← 請改這裡(必要)
+DATA_ROOT = r"D:/NYCU/AI/hw4/dataset"       # ← 請改這裡(必要)
 DATA_ROOT = DATA_ROOT.replace("\\", "/")
 
 data_dict = {
-    'train': f"{DATA_ROOT}/train/images",
-    'val':   f"{DATA_ROOT}/test/images",
-    'test':  f"{DATA_ROOT}/test/images",
+    'train': f"{DATA_ROOT}/images/train",
+    'val':   f"{DATA_ROOT}/images/test",
+    'test':  f"{DATA_ROOT}/images/test",
     'nc': 1,
     'names': ['pig']
 }
@@ -28,7 +28,7 @@ data_yaml_path = dict_to_temp_yaml(data_dict)
 # ============================================================
 # 2.載入Model
 # ============================================================
-model = YOLO("best.pt")
+model = YOLO("112511089.pt")
 
 # ============================================================
 # 3.Test Set metrics計算

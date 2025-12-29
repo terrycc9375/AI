@@ -137,19 +137,19 @@ def train(
     training_logs = model.train(
 		data=yaml_data,
 		epochs=epochs,
-		batch=8,
+		batch=4,
 		imgsz=1280,
 		project="YOLO11",
-		name="ep10",
+		name="ep10_no_aug",
 		exist_ok=True,
 		device="0",
         workers=0,
 
-        hsv_h=0.015,
-        hsv_s=0.5,
-        hsv_v=0.3,
-        augmentations=aug,
-        augment=True,
+        # hsv_h=0.015,
+        # hsv_s=0.5,
+        # hsv_v=0.3,
+        # augmentations=aug,
+        # augment=True,
 	)
 
 def main():
