@@ -10,3 +10,4 @@ best_model/
 res/
 dataset/
 *.pt
+.env
