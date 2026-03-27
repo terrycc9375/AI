@@ -1,6 +1,11 @@
 from huggingface_hub import login
 from unsloth import FastLanguageModel
 import torch
+import os
+import pandas as pd
+from datasets import Dataset
+from transformers import TrainingArguments
+from trl.trainer.sft_trainer import SFTTrainer
 
 class Prompt:
     def __init__(self):
@@ -65,6 +70,24 @@ class Prompt:
             prompt += f"Reasoning: ... Therefore, the correct answer is ({ans_letter}).{self.eot}"
             
         return prompt
+    
+def evaluate_accuracy(model, tokenizer, dataset):
+    correct = 0
+    model.eval()
+    for item in dataset:
+        prompt = Prompt.get_zero_shot_prompt(item, include_answer=False)
+        inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
+        
+        outputs = model.generate(**inputs, max_new_tokens=10)
+        result = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        
+        mapping = {0: "A", 1: "B", 2: "C", 3: "D"}
+        correct_ans = mapping[item['ans']]
+        
+        if f"({correct_ans})" in result or f"Answer: {correct_ans}" in result:
+            correct += 1
+            
+    print(f"Validation Accuracy: {correct / len(dataset) * 100:.2f}%")
 
 def main():
     token = input("Input token: ")
@@ -94,7 +117,69 @@ def main():
         random_state = 3407,
     )
 
-    print("模型已成功載入並完成 LoRA 配置！")
+    data_frame = pd.read_csv("dataset.csv")
+    prompt_builder = Prompt()
+    
+    def formatting_prompts_func(examples):
+        output_texts = []
+        for i in range(len(examples["question"])):
+            item = {
+                "question": examples["question"][i],
+                "opa": examples["opa"][i],
+                "opb": examples["opb"][i],
+                "opc": examples["opc"][i],
+                "opd": examples["opd"][i],
+                "ans": examples["ans"][i]
+            }
+            text = prompt_builder.get_zero_shot_prompt(item, include_answer=True)
+            output_texts.append(text)
+        return { "text" : output_texts }
+    
+    dataset = Dataset.from_pandas(data_frame)
+    dataset = dataset.train_test_split(test_size=0.1)
+    train_dataset = dataset["train"].map(formatting_prompts_func, batched = True)
+    test_dataset = dataset["test"].map(formatting_prompts_func, batched = True)
+
+    training_args = TrainingArguments(
+        per_device_train_batch_size = 2,
+        gradient_accumulation_steps = 4,
+        warmup_steps = 5,
+        # max_steps = 60,
+        num_train_epochs=3,
+        learning_rate = 2e-4,
+        fp16 = not torch.cuda.is_bf16_supported(),
+        bf16 = torch.cuda.is_bf16_supported(),
+        logging_steps = 5,
+        output_dir = "outputs",
+        eval_strategy= "epoch",
+        save_strategy = "epoch",
+        load_best_model_at_end = True,
+        metric_for_best_model = "loss",
+    )
+
+    trainer = SFTTrainer(
+        model = model,
+        tokenizer = tokenizer,
+        train_dataset = train_dataset,
+        eval_dataset= test_dataset,
+        dataset_text_field = "text",
+        max_seq_length = 2048,
+        args = training_args,
+    )
+
+    trainer.train()
+    
+    evaluate_accuracy(model, tokenizer, dataset["test"])
+
+    if not os.path.exists("saved_models"):
+        os.makedirs("saved_models")
+    model.save_pretrained("saved_models/01")
+    tokenizer.save_pretrained("saved_models/01")
+    
+def gputest():
+    import torch
+    print(torch.cuda.is_available())
 
 if __name__ == "__main__":
     main()
+    # gputest()
