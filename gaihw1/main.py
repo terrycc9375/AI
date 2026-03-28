@@ -1,7 +1,15 @@
+import os
+import sys
+import warnings
+
+os.environ["UNSLOTH_SKIP_TORCHAO"] = "1" 
+os.environ["ACCELERATE_USE_CPU"] = "0"
+
+warnings.filterwarnings("ignore", category=FutureWarning)
+
 from huggingface_hub import login
 from unsloth import FastLanguageModel
 import torch
-import os
 import pandas as pd
 from datasets import Dataset
 from transformers import TrainingArguments
@@ -70,27 +78,10 @@ class Prompt:
             prompt += f"Reasoning: ... Therefore, the correct answer is ({ans_letter}).{self.eot}"
             
         return prompt
-    
-def evaluate_accuracy(model, tokenizer, dataset):
-    correct = 0
-    model.eval()
-    for item in dataset:
-        prompt = Prompt.get_zero_shot_prompt(item, include_answer=False)
-        inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
-        
-        outputs = model.generate(**inputs, max_new_tokens=10)
-        result = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        
-        mapping = {0: "A", 1: "B", 2: "C", 3: "D"}
-        correct_ans = mapping[item['ans']]
-        
-        if f"({correct_ans})" in result or f"Answer: {correct_ans}" in result:
-            correct += 1
-            
-    print(f"Validation Accuracy: {correct / len(dataset) * 100:.2f}%")
 
 def main():
-    token = input("Input token: ")
+    # token = input("Input token: ")
+    token = "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"
     login(token)
 
     model_name = "unsloth/Llama-3.2-1B-Instruct"
@@ -136,7 +127,7 @@ def main():
         return { "text" : output_texts }
     
     dataset = Dataset.from_pandas(data_frame)
-    dataset = dataset.train_test_split(test_size=0.1)
+    dataset = dataset.train_test_split(test_size=0.1, seed=42)
     train_dataset = dataset["train"].map(formatting_prompts_func, batched = True)
     test_dataset = dataset["test"].map(formatting_prompts_func, batched = True)
 
@@ -145,11 +136,11 @@ def main():
         gradient_accumulation_steps = 4,
         warmup_steps = 5,
         # max_steps = 60,
-        num_train_epochs=3,
+        num_train_epochs=5,
         learning_rate = 2e-4,
         fp16 = not torch.cuda.is_bf16_supported(),
         bf16 = torch.cuda.is_bf16_supported(),
-        logging_steps = 5,
+        logging_strategy="epoch",
         output_dir = "outputs",
         eval_strategy= "epoch",
         save_strategy = "epoch",
@@ -168,13 +159,12 @@ def main():
     )
 
     trainer.train()
-    
-    evaluate_accuracy(model, tokenizer, dataset["test"])
 
+    trail = "01"
     if not os.path.exists("saved_models"):
         os.makedirs("saved_models")
-    model.save_pretrained("saved_models/01")
-    tokenizer.save_pretrained("saved_models/01")
+    model.save_pretrained(f"saved_models/{trail}")
+    tokenizer.save_pretrained(f"saved_models/{trail}")
     
 def gputest():
     import torch
