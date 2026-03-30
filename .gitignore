@@ -1,6 +1,6 @@
 *.zip
 *.rar
-venv/
+*venv*/
 saved_models/
 __pycache__/
 *bfg*/
