@@ -97,6 +97,7 @@ class Trainer():
 
         n = len(self.training_set)
         bs = self.training_args.batch_size
+        loss_val = float('inf')
         loss_history = []
 
         with Progress(
@@ -116,20 +117,23 @@ class Trainer():
             )
 
             for epoch in range(self.training_args.num_epochs):
-                if bs <= 1:
-                    output = self.model.forward(x_train)
-                    grad_output = self.training_args.grad_fn(output, y_train)
-                    grad_W, grad_b = self.model.backward(x_train, grad_output)
-                    self.model.W -= self.training_args.learning_rate * grad_W
-                    self.model.b -= self.training_args.learning_rate * grad_b
-                else:
-                    for i in range(0, n, bs):
-                        xb, yb = x_train[i : i + bs], y_train[i : i + bs]
-                        out = self.model.forward(xb)
-                        gw, gb = self.model.backward(xb, self.training_args.grad_fn(out, yb))
-                        
-                        self.model.W -= self.training_args.learning_rate * gw
-                        self.model.b -= self.training_args.learning_rate * gb
+                
+                indices = numpy.random.permutation(n)
+                x_train_shuffled = x_train[indices]
+                y_train_shuffled = y_train[indices]
+                for i in range(0, n, bs):
+                    xb, yb = x_train_shuffled[i : i + bs], y_train_shuffled[i : i + bs]
+                    out = self.model.forward(xb)
+                    gw, gb = self.model.backward(xb, self.training_args.grad_fn(out, yb))
+                    
+                    self.model.W -= self.training_args.learning_rate * gw
+                    self.model.b -= self.training_args.learning_rate * gb
+                    if numpy.isnan(self.model.W).any() or numpy.isinf(self.model.W).any():
+                        return {
+                            'best_val_loss': 1e10, # 回傳一個很大的數值代表失敗
+                            'stopped_epoch': epoch + 1,
+                            'loss_history': loss_history
+                        }
 
                 current_full_output = self.model.forward(x_train)
                 current_loss = self.training_args.loss_fn(current_full_output, y_train)
@@ -279,9 +283,9 @@ def p2(seed: int = 42, isPlot=True, lr=0.75, epochs=1000, early_stop=False, pati
     }
 
 def p3(seed: int = 42):
-    grid_size = 100
-    etas = numpy.logspace(-4, 0, grid_size)
-    max_T = 5000
+    grid_size = 50
+    etas = numpy.logspace(-4, -1, grid_size)
+    max_T = 1000
     patience = 20
     results = []
 
@@ -290,7 +294,8 @@ def p3(seed: int = 42):
     
     
     for eta in etas:
-        metrics = p1(seed=seed, isPlot=False, lr=eta, epochs=max_T, early_stop=True, patience=patience)
+        p1_results = p1(seed=seed, isPlot=False, lr=eta, epochs=max_T, early_stop=True, patience=patience)
+        metrics = p1_results['metrics']
         final_mse_scaled = metrics['best_val_loss'] * 10000
         stopped_epoch = metrics['stopped_epoch']
         results.append({
@@ -304,7 +309,10 @@ def p3(seed: int = 42):
         console.print(f"η={eta:.6f} | MSE: {final_mse_scaled:.2f} | 於 Epoch {stopped_epoch} 停止")
 
     df_results = pandas.DataFrame(results)
-
+    plot_df = df_results[df_results['mse'] < 1e10].copy()
+    if plot_df.empty:
+        console.print("[bold red]所有學習率都爆炸了！請調低 etas 的上限。[/bold red]")
+        return
     csv_filename = "grid_search_1d_linear.csv"
     df_results.to_csv(csv_filename, index=False)
     console.print(f"[green]數據已儲存至 {csv_filename}[/green]")
@@ -348,8 +356,8 @@ def p3(seed: int = 42):
 
 
 def p4(seed: int = 42):
-    etas = numpy.logspace(-4, 0, 100)
-    max_T = 5000
+    etas = numpy.logspace(-4, -1, 50)
+    max_T = 1000
     patience = 30
     results = []
     best_loss = float('inf')
@@ -405,7 +413,7 @@ def p4(seed: int = 42):
 
 def p5(seed: int = 42):
     fixed_eta = 0.75
-    max_epochs = 5000
+    max_epochs = 1000
     
     full_bs = 400 
     batch_sizes = [1, 8, 32, 128, full_bs]
