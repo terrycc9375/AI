@@ -325,9 +325,9 @@ def p3(seed: int = 42):
 
     plt.figure(figsize=(10, 6))
     plt.plot(df_results['eta'], df_results['mse'], marker='o', markersize=4, color="#1574c7", label='Validation MSE')
-    plt.annotate(f'Best: η={best_eta:.4f}\nMSE={best_mse:.2f}', 
-                 xy=(best_eta, best_mse), xytext=(best_eta*5, best_mse*10),
-                 arrowprops=dict(facecolor='black', shrink=0.05, width=1, headwidth=5))
+    # plt.annotate(f'Best: η={best_eta:.4f}\nMSE={best_mse:.2f}', 
+    #              xy=(best_eta, best_mse), xytext=(best_eta*5, best_mse*10),
+    #              arrowprops=dict(facecolor='black', shrink=0.05, width=1, headwidth=5))
     plt.xscale('log')
     plt.yscale('log')
     plt.xlabel('Learning Rate (eta) - Log Scale')
@@ -446,7 +446,7 @@ def p5(seed: int = 42):
 
 def p6(seed: int = 42):
     fixed_eta = 0.01
-    max_epochs = 5000
+    max_epochs = 1000
     
     full_bs = 400 
     batch_sizes = [1, 8, 32, 128, full_bs]
