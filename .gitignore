@@ -4,10 +4,13 @@
 saved_models/
 __pycache__/
 *bfg*/
-checkpoint/
+*checkpoint*/
 scoring_program/
 best_model/
 res/
 dataset/
 *.pt
 .env
+*cache*/
+*.log
+*model*/
