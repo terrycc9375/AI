@@ -357,7 +357,7 @@ def p3(seed: int = 42):
 
 def p4(seed: int = 42):
     etas = numpy.logspace(-4, -1, 50)
-    max_T = 1000
+    max_T = 5000
     patience = 30
     results = []
     best_loss = float('inf')
@@ -392,6 +392,19 @@ def p4(seed: int = 42):
     plt.xscale('log'); plt.xlabel('Learning Rate (eta)'); plt.ylabel('BCE Loss')
     plt.title('Logistic Regression Loss Trend'); plt.grid(True, which="both", alpha=0.2)
     plt.savefig('logistic_analysis_loss.png'); plt.close()
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(df_results['eta'], df_results['T_at_stop'], marker='s', markersize=4, color="#1eb007", label='Epochs to Converge')
+    plt.xscale('log')
+    plt.axhline(y=max_T, color='r', linestyle='--', alpha=0.5, label='Max Epochs Limit')
+    plt.xlabel('Learning Rate (eta) - Log Scale')
+    plt.ylabel('Stopping Epoch (T)')
+    plt.title('Convergence Speed (Early Stopping Insight)')
+    plt.grid(True, which="both", ls="-", alpha=0.2)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig('p4_epoch2convergence.png')
+    plt.close()
 
     if best_data:
         w1, w2 = best_data['W'].flatten()
