@@ -14,3 +14,5 @@ dataset/
 *cache*/
 *.log
 *model*/
+*index*/
+*output*/
