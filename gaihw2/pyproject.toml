@@ -1,0 +1,31 @@
+[project]
+name = "gaihw2"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = "==3.12.*"
+dependencies = [
+    "accelerate>=1.1.0",
+    "dataclasses>=0.8",
+    "datasets>=4.8.4",
+    "faiss-cpu>=1.13.2",
+    "langchain>=1.2.15",
+    "langchain-community>=0.4.1",
+    "langchain-core>=1.2.28",
+    "langchain-ollama>=1.1.0",
+    "ollama>=0.6.1",
+    "openai>=2.31.0",
+    "rank-bm25>=0.2.2",
+    "rouge-score>=0.1.2",
+    "sentence-transformers>=5.4.0",
+    "sentencepiece>=0.2.1",
+    "torch>=2.11.0",
+    "torchaudio>=2.11.0",
+    "torchvision>=0.26.0",
+    "transformers>=5.5.3",
+]
+
+[[tool.uv.index]]
+name = "pytorch-nightly"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
