@@ -1,8 +1,11 @@
 import os
 import json
 from typing import List, Optional
+import gc
 import tqdm
+import torch
 from sentence_transformers import SentenceTransformer
+from dotenv import load_dotenv
 from huggingface_hub import login
 
 from config import RAGConfig
@@ -83,8 +86,6 @@ class RAGPipeline:
         self,
         private_samples: List[PrivateSample],
         output_path: str = "results.json",
-        llm_model_name: str = "meta-llama/Llama-3.2-3B-Instruct",
-        load_in_4bit: bool = True,
     ):
         """
         完整推論流程：
@@ -95,11 +96,7 @@ class RAGPipeline:
         """
 
         # 初始化 LLM（只載入一次，所有 sample 共用）
-        generator = LLMGenerator(
-            model_name=llm_model_name,
-            load_in_4bit=load_in_4bit,
-        )
-
+        generator = LLMGenerator()
         results = []
 
         for i, sample in enumerate(tqdm.tqdm(private_samples, desc="Inference")):
@@ -113,9 +110,17 @@ class RAGPipeline:
             doc_indexer.build(chunks)
             doc_retriever = HybridRetriever(self.embed_model, doc_indexer, self.config)
 
-            # ── Step 3: Hybrid Search + Rerank ───────────────────────
-            candidates = doc_retriever.retrieve(sample.question)
-            reranked = self.reranker.rerank(sample.question, candidates)
+            # ── Step 3: Hypothetical Document Embeddings (HyDE) ──────────
+            hypothetical_answer = generator.generate_hypothetical(sample.question)
+            augmented_query = f"{sample.question}\n\nPossible answer: {hypothetical_answer}"
+
+            # ── Step 4: Hybrid Search + Rerank ───────────────────────
+            candidates = doc_retriever.retrieve(augmented_query)
+            filtered_candidates = [c for c in candidates if getattr(c, 'score', 0) > 0.3]  # 過濾掉小於 threshold 的結果
+            if not filtered_candidates:
+                reranked = self.reranker.rerank(sample.question, candidates)
+            else:
+                reranked = filtered_candidates # 大於 threshold 直接用
 
             # ── Step 4: 整理 evidence list（去重，保持 rerank 順序）──
             seen = set()
@@ -142,13 +147,24 @@ class RAGPipeline:
             with open(output_path, "w", encoding="utf-8") as f:
                 json.dump(results, f, ensure_ascii=False, indent=4)
 
+            del doc_indexer
+            del doc_retriever
+            del chunks
+            del candidates
+            del reranked
+            del seen
+            del evidence_list
+            gc.collect()
+            torch.cuda.empty_cache()
+
         print(f"[Pipeline] Inference complete. {len(results)} results saved to {output_path}")
         return results
 
 # ── 主程式入口 ──────────────────────────────────────────────
 
 def main():
-    login("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")
+    load_dotenv()
+    login(token=os.getenv("HF_TOKEN"))
     config = RAGConfig()
 
     # 1. 載入資料

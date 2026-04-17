@@ -3,6 +3,7 @@ import json
 import random
 import numpy as np
 import torch
+import gc
 from typing import List, Dict, Tuple
 from sentence_transformers import SentenceTransformer, InputExample, losses
 from sentence_transformers.sentence_transformer.evaluation import InformationRetrievalEvaluator
@@ -156,7 +157,7 @@ def train(config: RAGConfig, samples: List[RAGSample]):
     chunker = SemanticChunker(model, config)
 
     # 分割訓練/驗證集
-    split = int(len(samples) * 0.9)
+    split = int(len(samples) * 1) # 100% train
     train_samples = samples[:split]
     eval_samples = samples[split:]
 
@@ -198,6 +199,9 @@ def train(config: RAGConfig, samples: List[RAGSample]):
         show_progress_bar=True,
         evaluation_steps=len(train_dataloader) // 2,  # 每半個 epoch 評估一次
     )
+    del chunker, train_dataloader, train_loss, evaluator
+    gc.collect()
+    torch.cuda.empty_cache()
 
     print(f"[Trainer] Training complete. Best model saved to {config.output_dir}")
     return model

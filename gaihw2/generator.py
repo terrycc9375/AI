@@ -26,7 +26,6 @@ class LLMGenerator:
         self,
         model_name: str = "llama3.2:3b",
         device: Optional[str] = None,
-        load_in_4bit: bool = False,
         max_new_tokens: int = 512,
         temperature: float = 0.1,
     ):
@@ -37,35 +36,6 @@ class LLMGenerator:
 
         print(f"[Generator] Initializing Ollama with {model_name}...")
         self.client = ollama.Client()
-        # self._load_model(load_in_4bit)
-
-    def _load_model(self, load_in_4bit: bool):
-        """載入模型，支援 4-bit 量化節省 VRAM"""
-        quantization_config = None
-        if load_in_4bit and self.device == "cuda":
-            quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4",
-            )
-
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            self.model_name,
-            use_fast=True,
-        )
-        # LLaMA-3 需要明確設定 pad token
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_name,
-            quantization_config=quantization_config,
-            device_map="auto" if self.device == "cuda" else None,
-            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-        )
-        self.model.eval()
-        print(f"[Generator] Model loaded successfully.")
 
     def _build_prompt(self, question: str, evidence_list: List[str]) -> str:
         """
@@ -123,4 +93,39 @@ class LLMGenerator:
         # Ollama 的回應是字典，直接取出 'response' 鍵
         answer = response['response'].strip()
         return answer
+    
+    def generate_hypothetical(self, question: str) -> str:
+        """
+        生成假設答案(HyDE 方法)
+        - 僅使用問題，讓 LLM 生成一個假設的回應
+        - 這將用來增強查詢
+        """
+        hypothetical_prompt = f"""You are a helpful assistant. Based on the following question, generate a hypothetical, detailed answer as if you know the information. Be factual and concise.
+        Question: {question}
+        Hypothetical Answer:"""
+
+        messages = [
+            {"role": "user", "content": hypothetical_prompt},
+        ]
+        prompt_parts = []
+        for msg in messages:
+            role = msg["role"]
+            content = msg["content"]
+            prompt_parts.append(f"<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>")
+
+        prompt_parts.append("<|start_header_id|>assistant<|end_header_id|>\n\n")
+        prompt = "".join(prompt_parts)
+
+        response = self.client.generate(
+            model=self.model_name,
+            prompt=prompt,
+            options={
+                "num_predict": 32,  # may be shorter
+                "temperature": self.temperature,
+                "repetition_penalty": 1.1,
+            }
+        )
+
+        hypothetical_answer = response['response'].strip()
+        return hypothetical_answer
     
