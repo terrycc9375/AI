@@ -98,6 +98,7 @@ class RAGPipeline:
         # 初始化 LLM（只載入一次，所有 sample 共用）
         generator = LLMGenerator()
         results = []
+        evidence_score_collection = []
 
         for i, sample in enumerate(tqdm.tqdm(private_samples, desc="Inference")):
             doc_id = f"private_doc_{i}"
@@ -111,25 +112,25 @@ class RAGPipeline:
             doc_retriever = HybridRetriever(self.embed_model, doc_indexer, self.config)
 
             # ── Step 3: Hypothetical Document Embeddings (HyDE) ──────────
-            hypothetical_answer = generator.generate_hypothetical(sample.question)
-            augmented_query = f"{sample.question}\n\nPossible answer: {hypothetical_answer}"
+            # hypothetical_answer = generator.generate_augmented_question(sample.question, sample.title)
+            # augmented_query = f"{sample.question}\n\nPossible answer: {hypothetical_answer}"
+            augmented_query = generator.generate_hypothetical(sample.question, sample.title)
 
             # ── Step 4: Hybrid Search + Rerank ───────────────────────
             candidates = doc_retriever.retrieve(augmented_query)
-            filtered_candidates = [c for c in candidates if getattr(c, 'score', 0) > 0.3]  # 過濾掉小於 threshold 的結果
-            if not filtered_candidates:
-                reranked = self.reranker.rerank(sample.question, candidates)
-            else:
-                reranked = filtered_candidates # 大於 threshold 直接用
+            reranked = self.reranker.rerank(sample.question, candidates)
 
-            # ── Step 4: 整理 evidence list（去重，保持 rerank 順序）──
+            # ── Step 5: 整理 evidence list（去重，保持 rerank 順序）──
             seen = set()
             evidence_list = []
+            evidence_scores = []
             for r in reranked:
                 text = r.parent_text.strip()
                 if text and text not in seen:
                     seen.add(text)
                     evidence_list.append(text)
+                    evidence_scores.append(r.rerank_score)
+            evidence_score_collection.append(evidence_scores)
 
             # ── Step 5: LLM 生成答案 ──────────────────────────────────
             answer = generator.generate(
@@ -143,9 +144,7 @@ class RAGPipeline:
                 "evidence": evidence_list,
             })
 
-            # 即時寫入（防止中途崩潰遺失進度）
-            with open(output_path, "w", encoding="utf-8") as f:
-                json.dump(results, f, ensure_ascii=False, indent=4)
+            # 寫入json file原位
 
             del doc_indexer
             del doc_retriever
@@ -156,7 +155,11 @@ class RAGPipeline:
             del evidence_list
             gc.collect()
             torch.cuda.empty_cache()
-
+        
+        # with open("temp.txt", "w", encoding="utf-8") as f:
+        #     json.dump(evidence_score_collection, f, ensure_ascii=False, indent=4)
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(results, f, ensure_ascii=False, indent=4)
         print(f"[Pipeline] Inference complete. {len(results)} results saved to {output_path}")
         return results
 
@@ -173,9 +176,13 @@ def main():
     print(f"[Main] {len(samples)} samples loaded")
 
     # 2. 訓練 retriever
-    trained_model_path = config.output_dir
-    from trainer import train
-    train(config, samples)
+    need_train = False
+    if need_train:
+        trained_model_path = config.output_dir
+        from trainer import train
+        train(config, samples)
+    else:
+        trained_model_path = config.embed_model_name
 
     # 3. 建立 pipeline
     pipeline = RAGPipeline(config)
@@ -188,7 +195,7 @@ def main():
 
     pipeline.run_inference(
         private_samples=private_samples,
-        output_path="results.json",
+        output_path="112511089.json",
     )    
 
 

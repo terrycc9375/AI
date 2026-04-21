@@ -2,7 +2,7 @@ from typing import List
 from sentence_transformers import CrossEncoder
 from retriever import RetrievalResult
 from dataclasses import dataclass
-
+from config import RAGConfig
 
 @dataclass
 class RerankResult:
@@ -15,7 +15,7 @@ class RerankResult:
 
 
 class Reranker:
-    def __init__(self, config):
+    def __init__(self, config: RAGConfig):
         print(f"[Reranker] Loading {config.rerank_model_name}...")
         self.model = CrossEncoder(
             config.rerank_model_name,
@@ -29,7 +29,7 @@ class Reranker:
         import torch
         return torch.cuda.is_available()
 
-    def rerank(self, query: str, candidates: List[RetrievalResult]) -> List[RerankResult]:
+    def rerank(self, query: str, candidates: List[RetrievalResult], top_k: int = None) -> List[RerankResult]:
         if not candidates:
             return []
 
@@ -43,8 +43,15 @@ class Reranker:
             reverse=True
         )
 
+        top_k = top_k or self.config.top_k_rerank
+
         results = []
-        for candidate, score in reranked[:self.config.top_k_rerank]:
+        for i, (candidate, score) in enumerate(reranked):
+            if i >= 10:
+                break
+            if i >= top_k and score <= 0.25:  # 前 top_k = 2 個無條件保留，之後的只保留分數 > 0.2 的
+                continue
+            
             results.append(RerankResult(
                 chunk_id=candidate.chunk.chunk_id,
                 doc_id=candidate.chunk.doc_id,

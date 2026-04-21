@@ -1,6 +1,8 @@
 import numpy as np
 from typing import List, Tuple, Dict, Optional
 from sentence_transformers import SentenceTransformer
+
+from config import RAGConfig
 from indexer import HybridIndexer, Chunk
 from dataclasses import dataclass
 
@@ -15,7 +17,7 @@ class RetrievalResult:
 
 
 class HybridRetriever:
-    def __init__(self, embed_model: SentenceTransformer, indexer: HybridIndexer, config):
+    def __init__(self, embed_model: SentenceTransformer, indexer: HybridIndexer, config: RAGConfig):
         self.model = embed_model
         self.indexer = indexer
         self.config = config
@@ -52,11 +54,11 @@ class HybridRetriever:
         rank_info: Dict[int, dict] = {}
 
         for rank, (idx, _) in enumerate(vector_results):
-            rrf_scores[idx] = rrf_scores.get(idx, 0) + 1 / (k + rank + 1)
+            rrf_scores[idx] = rrf_scores.get(idx, 0) + self.config.vector_weight / (k + rank + 1)
             rank_info.setdefault(idx, {})["vector_rank"] = rank
 
         for rank, (idx, _) in enumerate(bm25_results):
-            rrf_scores[idx] = rrf_scores.get(idx, 0) + 1 / (k + rank + 1)
+            rrf_scores[idx] = rrf_scores.get(idx, 0) + self.config.bm25_weight / (k + rank + 1)
             rank_info.setdefault(idx, {})["bm25_rank"] = rank
 
         sorted_results = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
@@ -65,8 +67,8 @@ class HybridRetriever:
     def retrieve(self, query: str, top_k: Optional[int] = None) -> List[RetrievalResult]:
         top_k = top_k or self.config.top_k_retrieve
 
-        vector_results = self._vector_search(query, top_k * 2)
-        bm25_results = self._bm25_search(query, top_k * 2)
+        vector_results = self._vector_search(query, top_k * 3)
+        bm25_results = self._bm25_search(query, top_k * 3)
 
         fused, rank_info = self._reciprocal_rank_fusion(vector_results, bm25_results)
 
