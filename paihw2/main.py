@@ -10,7 +10,7 @@ from rich.console import Console
 console = Console()
 
 class Classifier(nn.Module):
-    def __init__(self, model_path=None):
+    def __init__(self, model_path: str | None = None):
         super(Classifier, self).__init__()
         self.features = nn.Sequential(
             nn.Conv2d(3, 32, kernel_size=3, padding=1),
@@ -52,7 +52,6 @@ def main():
     epochs = 50
     save_path = "cifar10_model.pth"
 
-    # 1. 載入 CIFAR-10 dataset
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
@@ -72,30 +71,40 @@ def main():
         TextColumn("[#238ce8][progress.description]{task.description}"),
         BarColumn(),
         TaskProgressColumn(),
-        MofNCompleteColumn(),
-        TextColumn("[#faac2f]Loss: {task.fields[loss]:>6.4f}"),
+        TextColumn("[#faac2f]Test Acc: {task.fields[test_acc]:>5.2f}%"),
         TimeRemainingColumn(),
     ) as progress:
-        
+        main_task = progress.add_task("Training Progress", total=epochs, test_acc=0.0)
+
         for epoch in range(epochs):
             model.train()
-            running_loss = 0.0
-            epoch_task = progress.add_task(
-                f"Epoch {epoch+1}/{epochs}", total=len(trainloader), loss=0.0
-            )
-
-            for i, data in enumerate(trainloader, 0):
-                inputs, labels = data[0].to(device), data[1].to(device)
-
+            for inputs, labels in trainloader:
+                inputs, labels = inputs.to(device), labels.to(device)
                 optimizer.zero_grad()
                 outputs = model(inputs)
                 loss = criterion(outputs, labels)
                 loss.backward()
                 optimizer.step()
 
-                running_loss = loss.item()
-                # 更新進度條資訊
-                progress.update(epoch_task, advance=1, loss=running_loss)
+            model.eval()
+            correct = 0
+            total = 0
+            with torch.no_grad():
+                for data, target in testloader:
+                    data, target = data.to(device), target.to(device)
+                    output = model(data)
+                    
+                    _, predicted = torch.max(output.data, 1)
+                    total += target.size(0)
+                    correct += (predicted == target).sum().item()
+            test_accuracy = 100 * correct / total
+
+            progress.update(
+                main_task, 
+                advance=1, 
+                description=f"Epoch {epoch+1}/{epochs}",
+                test_acc=test_accuracy,
+            )
 
     torch.save(model.state_dict(), save_path)
     print(f"\nModel saved to {save_path}")

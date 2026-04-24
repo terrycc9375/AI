@@ -1,2 +1,0 @@
-command: python3 score.py --input_dir $input --output_dir $output --config config.json
-description: Inference and score the model
