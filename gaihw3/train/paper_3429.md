@@ -1,0 +1,1528 @@
+# *Cambrian*-1: A Fully Open, *Vision-Centric* Exploration of Multimodal LLMs
+
+Shengbang Tong<sup>∗</sup> Ellis Brown<sup>∗</sup> Penghao Wu<sup>∗</sup> Sanghyun Woo Manoj Middepogu Sai Charitha Akula Jihan Yang Shusheng Yang Adithya Iyer Xichen Pan Austin Wang Rob Fergus Yann LeCun Saining Xie† New York University
+
+### Abstract
+
+We introduce Cambrian-1, a family of multimodal LLMs (MLLMs) designed with a vision-centric approach. While stronger language models can enhance multimodal capabilities, the design choices for vision components are often insufficiently explored and disconnected from visual representation learning research. This gap hinders accurate sensory grounding in real-world scenarios. Our study uses LLMs and visual instruction tuning as an interface to evaluate various visual representations, offering new insights into different models and architectures—selfsupervised, strongly supervised, or combinations thereof—based on experiments with over 20 vision encoders. We critically examine existing MLLM benchmarks, addressing the difficulties involved in consolidating and interpreting results from various tasks, and introduce a new vision-centric benchmark, CV-Bench. To further improve visual grounding, we propose the Spatial Vision Aggregator (SVA), a dynamic and spatially-aware connector that integrates high-resolution vision features with LLMs while reducing the number of tokens. Additionally, we discuss the curation of high-quality visual instruction-tuning data from publicly available sources, emphasizing the importance of data source balancing and distribution ratio. Collectively, Cambrian-1 not only achieves state-of-the-art performance but also serves as a comprehensive, open cookbook for instruction-tuned MLLMs. We provide model weights, code, supporting tools, datasets, and detailed instructiontuning and evaluation recipes. We hope our release will inspire and accelerate advancements in multimodal systems and visual representation learning.
+
+Project page: <https://cambrian-mllm.github.io/>
+
+### <span id="page-0-0"></span>1 Introduction
+
+There is a long-standing debate in philosophy about whether understanding and meaning in language require sensory grounding. Aristotle's emphasis on acquiring knowledge through sensory experience and empirical observation was central to his ancient Peripatetic school and remains influential to this day [\[8\]](#page-11-0); Aquinas famously formalized these ideas in the 13th century with the Peripatetic axiom: "*Nihil est in intellectu quod non sit prius in sensu*" (Nothing is in the intellect that was not first in the senses) [\[7\]](#page-11-1). Though many philosophers disagree [\[23\]](#page-11-2), it is evident that having robust and highly capable sensory grounding is at least beneficial. Consider the *Cambrian explosion*, during which the emergence of vision is believed [\[105\]](#page-14-0) to have been crucial for early animals to not only find food and avoid predators but also to evolve and improve. In fact, most human knowledge (and nearly
+
+<sup>∗</sup> Project Lead
+
+<sup>†</sup>Corresponding Author
+
+<span id="page-1-1"></span>Figure 1: We draw parallels between traditional protocols and the use of MLLMs for evaluating visual representations. MLLMs employ visual question answering to address a diverse array of real-world perception tasks. The bottom section highlights the five key pillars studied in Cambrian-1.
+
+all animal knowledge) is acquired through sensory experiences like sight, hearing, touch, taste, and smell, through interactions with the physical world [107]. These sensory experiences are fundamental to understanding the world around us and are crucial for real-world actions and decision-making.
+
+Beyond philosophical debates, recent advances in multimodal large language models (MLLMs) have brought the topic of *visual representation learning vs. language understanding* into practical focus. Language models have shown strong scaling behaviors [55], and recent advancements in multimodal learning are largely driven by the development of better, larger LLMs [81]. On the other hand, the design choices for vision components are often insufficiently explored and *disconnected* from visual representation learning research. For instance, many pioneering frameworks such as LLaVA [82] use vision transformer-based CLIP models [109, 145], which are strongly supervised by language<sup>‡</sup>, as the vision feature extractor. While other visual representations, such as self-supervised DINO [103], are being explored [126], there is a lack of comprehensive and systematic study in this domain. This gap exists primarily because such studies are challenging: MLLMs involve a complex training and evaluation pipeline with numerous design decisions to consider. In this work, we aim to bridge the gap by exploring MLLMs from a vision-centric perspective. More specifically, we use MLLM instruction tuning as an evaluation protocol for various visual representations (illustrated in Fig. 1).
+
+Our motivation for this study also stems from two potential concerns of the current multimodal learning research: 1) relying too heavily too early on language can act as a shortcut [47, 144], compensating for the deficiencies in learning effective visual representations, and 2) existing benchmarks may not provide adequate guidance for real-world scenarios—where visual grounding is crucial for robust multimodal understanding. These concerns are not unfounded, as researchers have started to notice that visual grounding is becoming a bottleneck for applying MLLMs in some challenging real-world applications, despite significant progress in improving general capabilities [41, 126, 136].
+
+From another perspective, traditional evaluation protocols for visual representation learning (e.g., *linear probing* and *end-to-end fine-tuning* on datasets like ImageNet-1K [113], COCO [79], and ADE20K [154]) are becoming saturated and do not reflect the diverse perception challenges found in real-world distributions. On the other hand, using language in the form of visual question answering (VQA) offers a flexible and robust evaluation protocol. Our study aims to explore this new protocol design, setting it up to gain insights that will guide the development of better visual representations in the future. Furthermore, to better evaluate visual representations in this integrated setting, we develop a vision-centric MLLM benchmark, CV-Bench, by transforming traditional vision benchmarks into VOA format (Section 2.2).
+
+Cambrian-1 is structured around five key pillars, each offering important insights into the design space of MLLMs:
+
+• Visual Representations: We explore various vision encoders and their combinations. §2.4
+
+<span id="page-1-0"></span><sup>&</sup>lt;sup>‡</sup>We emphasize that CLIP training should be considered as *strongly supervised*, as language provides significantly richer supervision than class labels.
+
+<span id="page-2-1"></span>Figure 2: Examples of various vision models, objectives, and architectures studied. Image from [\[48\]](#page-12-4).
+
+- Connector Design: We design a new dynamic and spatially-aware connector that integrates vision features with LLMs while reducing the number of tokens. [§3](#page-6-0)
+- Instruction Tuning Data: We curate high-quality visual instruction-tuning data from public sources, emphasizing the importance of distribution balancing. [§4](#page-8-0)
+- Instruction Tuning Recipes: We discuss instruction tuning strategies and practices. [§2.3](#page-3-1)
+- Benchmarking: We analyze existing MLLM benchmarks, cluster them into 4 intuitive groups, and introduce a new vision-centric benchmark "CV-Bench". [§2.1,](#page-2-0) [§2.2](#page-3-0)
+
+We defer a detailed review of the fundamental components and methodologies that underpin MLLM research to Appendix [B](#page-17-0)
+
+### 2 Evaluating Visual Representations through MLLMs
+
+Current MLLMs predominantly rely on CLIP [\[109\]](#page-14-2) as the visual encoder due to its pre-alignment with language and ease of adaptation to the LLM token space. However, strong language priors can be a double-edged sword—they compensate for deficiencies in learning effective visual representations [\[126\]](#page-15-1) and diminish insights gained from extensive visual representation learning research. In this section, we systematically evaluate how various visual encoder choices (see Fig. [2\)](#page-2-1) impact the multimodal capabilities of MLLMs. We also advocate for using MLLM evaluation as a robust framework for assessing visual representation methods, moving beyond traditional protocols like linear probing and end-to-end fine-tuning to more faithfully reflect the diverse perception challenges in real-world scenarios and to better guide the development of improved visual representations.
+
+### <span id="page-2-0"></span>2.1 Analyzing the Benchmarks
+
+To effectively evaluate visual representations and MLLMs, we first need to select benchmarks that accurately assess the *multimodal* capabilities of these models. We use a suite of commonly used benchmarks [\[24,](#page-11-4) [45,](#page-12-5) [54,](#page-12-6) [57,](#page-12-7) [83,](#page-13-4) [84,](#page-13-5) [91,](#page-14-6) [92,](#page-14-7) [96,](#page-14-8) [97,](#page-14-9) [120,](#page-15-4) [126,](#page-15-1) [137,](#page-15-5) [143\]](#page-15-6), which is the intersection of those used in recent MLLM research [\[75,](#page-13-6) [77,](#page-13-7) [137\]](#page-15-5). To help interpret our results, we begin by analyzing the benchmarks themselves. Here, we train MLLMs with 23 different vision backbones (see Table [6\)](#page-22-0) from a variety of model families (see Fig. [2\)](#page-2-1) using a 2-stage instruction tuning process initially proposed in [\[82\]](#page-13-1): first training connector on 1.2M adapter data from ShareGPT-4V [\[27\]](#page-11-5) followed by fine-tuning both the connector and LLM on 737K instruction tuning data (see more details in Appendices [G.5](#page-32-0) and [H\)](#page-34-0). Full benchmark results in Table [9.](#page-23-0)
+
+Who's answering the question: the LLM or MLLM? Determining whether a benchmark *truly* needs visual input to be solved has been a persistent challenge in vision-language research [\[2,](#page-11-6) [26,](#page-11-7) [50,](#page-12-8) [94\]](#page-14-10). In this study, we compare the performance of MLLMs with and without visual input[§](#page-2-2) , and also calculate the expected score via randomly guessing. These three conditions are visualized in Fig. [3-](#page-3-2)left, with benchmarks sorted by the difference between the average score with vision enabled and disabled. SQA-I[¶](#page-2-3) , MMMU, MathVista, and AI2D display less than a 5% gap between vision enabled and disabled, suggesting that these benchmarks may not significantly depend on visual input and rather heavily rely on the base LLM. TextVQA and GQA both demonstrate a nearly 40% positive gap between random guessing and vision-disabled scores, implying a strong language bias in these benchmarks. On the other hand, the vision-disabled performance on benchmarks like MMVP is notably worse than random guessing, suggesting that strong visual grounding is particularly crucial.
+
+Clustering the Benchmarks To better understand the different aspects of MLLM performance, we analyze the correlations between the performance of our 23 MLLMs on each benchmark. A
+
+<span id="page-2-2"></span><sup>§</sup>We note that our instruction-tuning data includes text-only data, so text-only questions are not OOD.
+
+<span id="page-2-3"></span><sup>¶</sup>The subset of SQA [\[91\]](#page-14-6) with images.
+
+<span id="page-3-2"></span>Figure 3: Left: Performance comparison of MLLMs with visual input enabled and disabled across various benchmarks. Benchmarks are sorted by the difference between the average score with vision enabled and disabled. Right: Principal component analysis displaying clusters of benchmarks based on performance metrics, with bubble size corresponding to benchmark size. We label the clusters as "General" in green, "Knowledge" in yellow, "Chart & OCR" in red, and "Vision-Centric" in blue.
+
+confusion matrix (Fig. [10\)](#page-19-0) reveals that certain benchmarks, such as MMMU, are largely uncorrelated with the others. We perform principal component analysis on the benchmark scores and observe the formation of clusters corresponding to "General," "Knowledge," "Chart & OCR," and "Vision-Centric" categories (Fig. [3-](#page-3-2)right). We assign MMMU to the knowledge category based on the types of questions it includes (see Appendix [D\)](#page-19-1). We also find that existing vision-centric benchmarks [\[126,](#page-15-1) [137\]](#page-15-5) are of insufficient size (see Fig. [3-](#page-3-2)right), challenging the robustness of evaluating such capabilities. These benchmarks do not cover crucial visual elements such as depth and spatial awareness.
+
+*Finding 1:* Most benchmarks do not properly measure vision-centric capabilities, and the ones that do have very few samples.
+
+#### <span id="page-3-0"></span>2.2 Cambrian Vision-Centric Benchmark (CV-Bench)
+
+To address the limitations of existing vision-centric benchmarks, we introduce the Cambrian Vision-Centric Benchmark (CV-Bench). With 2638 manually-inspected examples, CV-Bench provides significantly more examples than other vision-centric MLLM benchmarks—3.5× more than Real-WorldQA [\[137\]](#page-15-5) and 8.8× more than MMVP [\[126\]](#page-15-1). By repurposing standard vision benchmarks [\[18,](#page-11-8) [79,](#page-13-2) [154\]](#page-16-0) [||](#page-3-3), we can assess models at classic vision tasks within a multimodal context. Leveraging the rich ground truth annotations from the benchmarks, we formulate natural language questions that probe the fundamental 2D and 3D understanding of the models.
+
+As visualized in Fig. [11,](#page-20-0) CV-Bench evaluates 2D understanding via spatial relationships & object counting, and 3D understanding via depth order & relative distance. We refer details to Appendix [E.](#page-19-2)
+
+*Finding 2:* Existing vision benchmarks can be effectively repurposed into VQA questions, enabling the assessment of vision-centric MLLM capabilities.
+
+#### <span id="page-3-1"></span>2.3 Instruction Tuning Recipes
+
+MLLMs start with pre-trained LLM and vision backbones, connecting these modules with a connector such as a projector (MLP). The original LLaVA [\[80,](#page-13-8) [82\]](#page-13-1) proposes a 2-stage frozen training process: first, pre-training a connector between frozen LLM and vision backbones using adapter data, and then fine-tuning both the connector and LLM with instruction tuning data while leaving the vision encoder frozen. Various studies [\[27,](#page-11-5) [63,](#page-13-9) [81,](#page-13-0) [98\]](#page-14-11) have drawn different conclusions regarding the optimal training methodology for MLLMs. Here, we revisit this topic with extensive experiments.
+
+For our experiments, we tune a set of MLLMs using Vicuna-1.5-7B as the LLM backbone and each of our 23 vision models (Table [6\)](#page-22-0) as the visual encoder. We use a 737K instruction tuning data mix for all experiments here (see Appendix [H\)](#page-34-0). All hyperparameters are matched across each experimental setting—highlighting the impact of different tuning strategies with each visual encoder. All experimental settings and results are tabulated in Appendix [F.2.](#page-22-1)
+
+<span id="page-3-3"></span><sup>||</sup>Omni3D assets are sourced from [\[3,](#page-11-9) [13,](#page-11-10) [20,](#page-11-11) [46,](#page-12-9) [111,](#page-14-12) [121\]](#page-15-7).
+
+<span id="page-4-1"></span>Figure 4: Effect of Training Recipe on Model Performance. Boxplots display the distribution of benchmark scores across benchmark categories for different training recipes and types of visual encoders. The four training recipes include freezing the visual encoder with various amounts of adapter data (0M, 0.5M, 1.2M) as well as unfreezing it with 1.2M, adapter data. Amount of Adapter Data: All model types show increased performance on general and vision-centric benchmarks; knowledge benchmarks show mixed results; OCR & chart benchmarks benefit from more data for language-supervised models. Unfreezing: Unfreezing the visual encoder with 1.2M, adapter data generally benefits all categories.
+
+One Stage vs Two Stage Training Recent work [63] advocates for skipping connector pre-training, claiming this "reduces compute cost without harming downstream performance." To explore whether this claim holds—especially when using non-language-supervised visual encoders—we conduct experiments using 0, 0.5M, and 1.2M adapter data. Following LLaVA's recipe [82], we tune only the connector on the adapter data during this first phase, before unfreezing the LLM and connector during instruction tuning on the 737K mix. Fig. 4 shows that pre-training the connector first enhances model performance and that more adapter data further improves performance across all domains. Thus, we subsequently adopt 2-stage training with 1.2M adapter data as our standard setup.
+
+Finding 3: Two-stage training is beneficial; more adapter data further improves results.
+
+Freeze vs Unfreeze Vision Encoder There are also mixed practices in freezing [63, 80, 82] or unfreezing [44, 81] vision backbones during fine-tuning. Some argue that unfreezing the vision backbone significantly degrades performance [63]. Our experiments demonstrate that unfreezing benefits performance across all benchmarks except for a marginal change in knowledge benchmarks (Fig. 4). We suspect this is due to the composition of the 737K instruction tuning data and the LLM-heavy focus of these benchmarks (see Section 2.1). We note that unfreezing the vision backbone introduces additional computational overhead, which prohibits testing on some larger vision models under current sharding strategies (see more details in Appendix H).
+
+*Finding 4:* Unfreezing the vision encoder is widely beneficial. Language-supervised models always benefit; SSL models particularly benefit on vision-centric benchmarks.
+
+#### <span id="page-4-0"></span>2.4 MLLMs as a Visual Representation Evaluator
+
+As discussed in earlier sections, MLLMs provide a new interface to explore aspects of vision models beyond traditional benchmarks like ImageNet-1k linear probing. We study the 2-stage instruction tuning setting using 1.2M adapter data, 737K fine-tuning data, and frozen visual encoders to allow comparison of the widest range of models.
+
+<span id="page-5-1"></span>Figure 5: Evaluating Visual Representations with MLLMs While language-supervised models outperform self-supervised or other models, a well-trained self-supervised model like DINOv2 can also achieve competitive performance on vision-centric tasks.
+
+<span id="page-5-2"></span>Figure 6: Continued Fine-Tuning Narrows the Gap Between CLIP and DINOv2. Performance is compared with 0.7M and 5M instruction tuning data in both frozen ( ) and unfrozen ( ) settings. DINOv2 shows significant performance improvement with increased data and unfreezing—surpassing the 0.7M CLIP model in several benchmarks and narrowing the gap to the 5M model in knowledge and vision-centric tasks.
+
+We evaluate on benchmarks detailed in Section 2.1, calculating the average performance\*\* for each category and visualize the results in Fig. 5 (full results in Appendix F). Our findings highlight the advantages of language-supervised models over non-CLIP models across all benchmark categories, with significantly better performance on chart and OCR-related benchmarks. We hypothesize that this is due to CLIP's *training data*, such as LAION [115], containing abundant OCR and text-heavy data, whereas SSL and other vision models primarily train on natural images with significantly less text content. It is also noteworthy that language-supervised models are typically trained with a very large pool of data, ranging from 400 million [109] to 10 billion [28] samples, whereas the largest vision self-supervised training dataset, like DINOv2, consists of only *142 million samples* [103].
+
+Additionally, we observe that higher-resolution models particularly enhance performance on chart and vision-centric benchmarks while remaining neutral on general VQA and knowledge-based VQAs. While the majority of the backbones we examine are ViT-based [39], **ConvNet-based architectures** (such as OpenCLIP ConvNeXt [86]) are inherently well-suited for high-resolution image processing [130] and can produce superior results on OCR & Chart and Vision-Centric benchmarks. In vision-centric benchmarks, the gap between language-supervised and other types of vision models is smaller, with a well-trained self-supervised DINOv2 model even outperforming some language-supervised models.
+
+*Finding 5:* High-res encoders greatly enhance performance on chart & vision-centric benchmarks, and ConvNet-based architectures are inherently well-suited for such tasks.
+
+**Narrowing the gap between Language- and Self-Supervised models** Above, we observe that DINOv2 stands midway between SSL models and language-supervised models on general and knowledge benchmarks, even outperforming some language-supervised models on vision-centric benchmarks. Here, we study whether the continued finetuning of an MLLM based on a SSL model
+
+<span id="page-5-0"></span><sup>\*\*</sup>Before averaging, we divide the MME Perception score by 20 to have the same scale as other benchmarks.
+
+can achieve performance similar to that of a language-supervised model. Specifically, we scale up the instruction tuning data from 737K to 5M (see more details in Appendix [G.5\)](#page-32-0), and instruction tune MLLMs with DINOv2 ViT-L/14@336 and OpenAI CLIP ViT-L/14@336 encoders in both frozen and unfrozen settings. In Fig. [6,](#page-5-2) we observe that by unfreezing the vision backbone, the DINOv2-based MLLM fine-tuned with 5M data surpasses the MLLM trained with a CLIP model on 0.7M data. Additionally, the gap between DINOv2 and the CLIP models is reduced under the 5M setting.
+
+*Finding 6:* Language supervision offers strong advantages, but the performance gap can be narrowed with SSL methods given enough data and proper tuning.
+
+#### <span id="page-6-1"></span>2.5 Combining Multiple Vision Encoders
+
+As observed in Fig. [5,](#page-5-1) different vision encoders excel in different aspects of MLLM performance. In this study, we explore the potential of combining multiple vision encoders to leverage their distinctive representations, aiming to build a more capable MLLM. Given that different vision encoders use varying architectures and image resolutions, we interpolate to a fixed number of visual tokens (576) in this subsection (see details in Appendix [F.3\)](#page-24-0). We then concatenate these tokens along the feature dimension, following a method similar to A-MoF proposed in [\[126\]](#page-15-1).
+
+Our study indicates that adding a non-language-supervised model (DINOv2) can improve benchmark performance, especially in vision-centric tasks. Notably, even OCR benchmarks benefit from incorporating DINOv2. This highlights the importance of self-supervised learning models in complementing language-supervised models to achieve robust multimodal understanding. Detailed results and configurations are available in Appendix [F.3.](#page-24-0)
+
+However, this naive strategy has two limitations: 1) it employs interpolation, which can lead to information loss, especially with vision encoders with high-resolution feature maps, and 2) it treats each model equally via simple concatenation. Therefore, we seek a more effective strategy that can more flexibly leverage model combinations with less information loss.
+
+*Finding 7:* Combining multiple vision encoders, including SSL models, can enhance MLLM performance across various benchmarks, particularly in vision-centric tasks.
+
+### <span id="page-6-0"></span>3 Spatial Vision Aggregator (SVA): A New Connector Design
+
+To effectively aggregate features from multiple vision encoders and prevent the information loss introduced by interpolation, we use a set of learnable latent queries that interact with multiple vision features via cross-attention layers [\[37\]](#page-12-12). In particular, our approach incorporates two new vision-centric design principles:
+
+- 1. We introduce spatial inductive bias by explicitly defining the aggregation space for each token in the query.
+- 2. We aggregate vision features multiple times across the LLM layers, enabling the model to repeatedly access and integrate necessary visual information.
+
+To facilitate information aggregation via cross-attention, we create a C-dimension learnable latent token x ∈ R <sup>C</sup> that is repeated L × L times to form a 2D grid, serving as the query X ∈ R L <sup>2</sup>×<sup>C</sup> . The set of visual features F from N vision encoders serve as the context (i.e., key and value). We ensure the output resolution of every vision encoder is a multiple of L. Formally, the feature map of the k-th vision encoder (Fk) has a resolution of mkL × mkL × C, where m<sup>k</sup> is a positive integer multiplier, and L is the height/width of the learnable 2D grid with hidden dimension C.
+
+Spatial inductive bias To maintain the spatial structure during cross-attention, we align each token in the query with a specific sub-region of the feature maps in all vision encoders. Formally, a token at row i and column j in the query xi,j corresponds to the sub-region
+
+$$\mathbf{F}_k[m_k \cdot i : m_k \cdot (i+1), m_k \cdot j : m_k \cdot (j+1)] \in \mathbb{R}^{m_k^2 \times C}$$
+
+of the k-th vision feature map. As a result, a token xi,j aggregates a total of P <sup>k</sup> m<sup>2</sup> k features from N vision encoders through cross-attention (see Fig. [7-](#page-7-0)left).
+
+Specifically, the updated query vector q ∗ <sup>i</sup>,<sup>j</sup> ∈ R <sup>1</sup>×<sup>C</sup> at position (i, j) is computed as
+
+<span id="page-7-0"></span>Figure 7: Spatial Vision Aggregator (SVA). We propose SVA, a dynamic and spatially-aware connector that integrates multiple vision features with LLMs while reducing the number of tokens.9
+
+$$\mathbf{q}^*_{i,j} = \operatorname{softmax}\left(\frac{\mathbf{q}_{i,j} \cdot [\mathbf{k}_{i,j,1}, \mathbf{k}_{i,j,2}, \dots, \mathbf{k}_{i,j,N}]^\top}{\sqrt{C}}\right) [\mathbf{v}_{i,j,1}, \mathbf{v}_{i,j,2}, \dots, \mathbf{v}_{i,j,N}],$$
+(1)
+
+where
+
+$$\begin{aligned} \mathbf{q}_{i,j} &= \mathbf{W}^{Q} \mathbf{x}_{i,j} \in \mathbb{R}^{1 \times C}, \\ \mathbf{k}_{i,j,k} &= \mathbf{W}_{k}^{K} \mathbf{F}_{k} [m_{k} \cdot i : m_{k} \cdot (i+1), \ m_{k} \cdot j : m_{k} \cdot (j+1)] \in \mathbb{R}^{m_{k}^{2} \times C}, \\ \mathbf{v}_{i,j,k} &= \mathbf{W}_{k}^{V} \mathbf{F}_{k} [m_{k} \cdot i : m_{k} \cdot (i+1), \ m_{k} \cdot j : m_{k} \cdot (j+1)] \in \mathbb{R}^{m_{k}^{2} \times C}. \end{aligned}$$
+
+Here,  $\mathbf{q}_{i,j}$  is the query vector at position (i,j), calculated using the query projection matrix  $\mathbf{W}^Q \in \mathbb{R}^{C \times C}$ . The key vectors  $\mathbf{k}_{i,j,k}$  and value vectors  $\mathbf{v}_{i,j,k}$  are computed for each vision encoder k using their respective key and value projection matrices  $\mathbf{W}_k^K \in \mathbb{R}^{C \times C}$  and  $\mathbf{W}_k^V \in \mathbb{R}^{C \times C}$ . Since  $\sum_k m_k^2$  features are aggregated into a single token, we effectively reduce the number of tokens.
+
+**Multi-layer vision aggregation** Although our proposal effectively aggregates features from multiple vision encoders, there is still potential information loss with high-resolution input (large  $m_k$ ) or multiple vision encoders (large N). Here, a single token would have to handle a larger amount of context information during aggregation. To prevent this, we allow cross-attention to occur multiple times by inserting our proposal throughout the LLM layers—allowing consistent access to the uncompressed visual information (see Fig. 7-right).
+
+<span id="page-7-1"></span>**Hyperparameters** To flexibly modulate capacity, we introduce two hyperparameters D and G, which indicate the number of cross-attention layers and distinct groups of learnable queries used between the vision models and the LLM, respectively. D and G are always set to 1 for cross-attention layers within LLM layers. We provide ablation studies on the selection of D and G in Appendix H.
+
+| Connector        | General | Knowledge | OCR & Chart | Vision-Centric |
+|------------------|---------|-----------|-------------|----------------|
+| Concat. [126]    | 67.2    | 48.9      | 50.1        | 52.6           |
+| Resampler [58]   | 63.1    | 46.5      | 27.1        | 42.6           |
+| SVA-no-multi-agg | 68.0    | 49.5      | 55.2        | 52.6           |
+| SVA              | 68.5    | 49.7      | 55.5        | 53.2           |
+
+Table 1: Comparison between our SVA and other aggregation approaches. The SVA module consistently outperforms other baselines and excels in aggregating high-resolution vision information.
+
+We demonstrate the efficacy of SVA module using the best vision model combination results from the previous section and a Vicuna-1.5-7B base LLM. Specifically, we employ a combination of four vision encoders: OpenAI CLIP ViT-L/14@336, SigLIP ViT-SO400M/14@384, OpenCLIP ConvNeXt-XXL@1024, and DINOv2 ViT-L/14@518. We compare our method with two strong baselines: 1) concatenation-based [126] and 2) Re-sampler [11, 72]. Here, we include two variants of our SVA module. The standard one, "SVA", uses D=3, G=1, and inserts cross-attention blocks inside the LLM with a layer stride of 3. To isolate the advantages of spatial inductive biases, we include another SVA variant, "SVA-no-multi-agg", that does not add cross-attention blocks inside the LLM and sets D=3 and G=3. Table 1 shows that SVA outperforms both baselines, with a significant improvement in the OCR & chart category. In contrast, the Resampler—which lacks spatial inductive biases—struggles to condense concatenated tokens from various vision towers into
+
+<span id="page-8-1"></span>Figure 8: Cambrian-7M: A Large-Scale Curated Instruction Tuning Dataset for MLLM, Left: The inner circle shows the original distribution of Cambrian-10M. The outer circle shows the curated Cambrian-7M. **Right:** All the data sources in the Cambrian dataset as well as the ones filtered in data curation.
+
+<span id="page-8-2"></span>
+
+|      | Average | General | Knowledge | OCR&Chart | Vision-Centric | 300 · | 20,00% | 2000%  | 30.0         | 005 | 33,074                   | zefore.        | . U.S. | — Lenguage<br>— General<br>— OCR |              | verage | eneral | Knowledge | CR&Chart | Vision-Centric |   |
+|------|---------|---------|-----------|-----------|----------------|-------|--------|--------|--------------|-----|--------------------------|----------------|--------|----------------------------------|--------------|--------|--------|-----------|----------|----------------|---|
+| 150k | 53.7    | 68.0    | 51.3      | 45.2      | 50.5           | \$ 00 |        |        |              |     | /                        | 34.52%         | #72 a  | - Country                        |              | *      | 9      |           |          | >              | _ |
+| 250k | 54.3    | 68.1    | 51.5      | 45.3      | 52.2           | 1     | 39,10% | 25,00% | 30.0         | 0%  | 23,10%                   |                | 43 9   | - Nun                            | LLaVA-665K   | 40.7   | 64.7   | 45.2      | 20.8     | 32.0           |   |
+| 350k | 54.3    | 67.4    | 51.4      | 46.0      | 52.3           | 29-   |        | 500%   | 3.00<br>5.00 |     | $\checkmark$             | 27.22%         | 46.6   | — Code                           | Cambrian-10M | 54.8   | 68.7   | 51.6      | 47.3     | 51.4           |   |
+| 450k | 54.2    | 68.0    | 52.2      | 45.5      | 50.7           |       | 10,00% | 15,00% | 15.0         | 0%  | 90.00%<br>4.60%<br>4.50% | 5.71%<br>7.20% | 464    | - Average                        | Cambrian-7M  | 55.9   | 69.6   | 52.6      | 47.3     | 54.1           |   |
+
+Table 2: t value between 250k and Figure 9: Exploring instruction tun- Table 3: Performance improves with 350k obtains better performance. ing data mixture ratios.
+
+better instruction tuning data curation.
+
+a limited number of learnable queries via global cross-attention. We also compare SVA with other connectors in Appendix H and show clear advantages.
+
+Finding 8: Spatial inductive bias and deep interaction between LLM and vision feature help to better aggregate and condense vision features.
+
+### <span id="page-8-0"></span>**Instruction Tuning Data for Training MLLMs**
+
+#### <span id="page-8-3"></span>**Data Collection**
+
+Collecting Instruction Tuning Data from existing data sources Unlike language data, multimodal (visual) instruction-tuning data is much rarer and harder to collect. To address this, we use existing multimodal benchmarks and datasets involving visual interaction data, such as Visual Question Answering (VQA) and OCR data. To help maintain conversational abilities [147], we also collect a small volume of high-quality language-only instruction-following data. We categorize data into General conversation, OCR, Counting, Code, Math, Science, and Language-only data. We list the data sources in Fig. 8, and the details of data preparation in Appendix G.
+
+**Targeted Internet Data Collection Engine** As observed in Fig. 8, there is an unbalanced distribution of data. Some categories, such as science, have very few data sources, and each source has limited samples. Inspired by previous works [73], we introduce a data engine to create large-scale, reliable, high-quality knowledge-based instruction tuning data (see Fig. 15). Details are in Appendix G.3. Our data engine produces a large volume of reliable scientific data, increasing the diversity in the data pool. We generate 161k science-related data points—400% more than the previous combined data sources.
+
+Cambrian-10M We create a large pool of instruction tuning data, which we refer to as Cambrian-10M. This pool contains approximately 9784k data points, offering a diverse range of data for our work and future research. We visualize its composition in Fig. 8.
+
+#### 4.2 **Data Curation**
+
+Cambrian-10M is a large pool of instruction tuning data sourced from a variety of data sources, with an unbalanced data ratio between categories. Here, we take a preliminary step to study data curation by improving data balancing and adjusting data ratios.
+
+<span id="page-9-0"></span>
+
+| Model                    |            |      |          | General |           |      |      |          | Knowledge |                |      |      |         | OCR & Chart |         |        |      |      | Vision-Centric |            |            |
+|--------------------------|------------|------|----------|---------|-----------|------|------|----------|-----------|----------------|------|------|---------|-------------|---------|--------|------|------|----------------|------------|------------|
+| Method                   | # Vis Tok. | Avg  | P<br>MME | MMB     | I<br>SEED | GQA  | Avg  | I<br>SQA | V<br>MMMU | M<br>MathVista | AI2D | Avg  | ChartQA | OCRBench    | TextVQA | DocVQA | Avg  | MMVP | RealworldQA    | CV-Bench2D | CV-Bench3D |
+| GPT-4V                   | UNK.       | 63.0 | 1409.4   | 75.8    | 69.1      | 36.8 | 65.2 | 75.7     | 56.8      | 49.9           | 78.2 | 77.4 | 78.5    | 64.5        | 78.0    | 88.4   | 62.4 | 50.0 | 61.4           | 64.3       | 73.8       |
+| Gemini-1.0 Pro           | UNK.       | -    | 1496.6   | 73.6    | 70.7      | -    | -    | 79.5     | 47.9      | 45.2           | -    | -    | -       | 65.9        | -       | -      | -    | -    | -              | -          | -          |
+| Gemini-1.5 Pro           | UNK.       | -    | -        | -       | -         | -    | -    | -        | 58.5      | 52.1           | 80.3 | -    | 81.3    | -           | 73.5    | 86.5   | -    | -    | 67.5           | -          | -          |
+| Grok-1.5                 | UNK.       | -    | -        | -       | -         | -    | -    | -        | 53.6      | 52.8           | 88.3 | -    | 76.1    | -           | 78.1    | 85.6   | -    | -    | 68.7           | -          | -          |
+| MM-1-8B                  | 144        | -    | 1529.3   | 72.3    | 69.9      | -    | -    | 72.6     | 37.0      | 35.9           | -    | -    | -       | -           | -       | -      | -    | -    | -              | -          | -          |
+| MM-1-30B                 | 144        | -    | 1637.6   | 75.1    | 72.1      | -    | -    | 81.0     | 44.7      | 39.4           | -    | -    | -       | -           | -       | -      | -    | -    | -              | -          | -          |
+| Base LLM: Llama-3-Ins-8B |            |      |          |         |           |      |      |          |           |                |      |      |         |             |         |        |      |      |                |            |            |
+| Mini-Gemini-HD-8B        | 2880       | 72.7 | 1606.0   | 72.7    | 73.2      | 64.5 | 55.7 | 75.1     | 37.3      | 37.0           | 73.5 | 62.9 | 59.1    | 47.7        | 70.2    | 74.6   | 51.5 | 18.7 | 62.1           | 62.2       | 63.0       |
+| LLaVA-NeXT-8B            | 2880       | 72.5 | 1603.7   | 72.1    | 72.7      | 65.2 | 55.6 | 72.8     | 41.7      | 36.3           | 71.6 | 63.9 | 69.5    | 49.0        | 64.6    | 72.6   | 56.6 | 38.7 | 60.1           | 62.2       | 65.3       |
+| Cambrian-1-8B            | 576        | 73.1 | 1,547.1  | 75.9    | 74.7      | 64.6 | 61.3 | 80.4     | 42.7      | 49.0           | 73.0 | 71.3 | 73.3    | 62.4        | 71.7    | 77.8   | 65.0 | 51.3 | 64.2           | 72.3       | 72.0       |
+| Base LLM: Vicuna-1.5-13B |            |      |          |         |           |      |      |          |           |                |      |      |         |             |         |        |      |      |                |            |            |
+| Mini-Gemini-HD-13B       | 2880       | 70.7 | 1597.0   | 68.6    | 70.6      | 63.7 | 54.1 | 71.9     | 37.3      | 37.0           | 70.1 | 60.8 | 56.6    | 46.6        | 70.2    | 69.8   | 49.4 | 19.3 | 57.5           | 53.6       | 67.3       |
+| LLaVA-NeXT-13B           | 2880       | 69.9 | 1575.0   | 70.0    | 65.6      | 65.4 | 53.7 | 73.5     | 36.2      | 35.1           | 70.0 | 62.9 | 62.2    | 51.4        | 67.1    | 70.9   | 55.9 | 36.0 | 59.1           | 62.7       | 65.7       |
+| Cambrian-1-13B           | 576        | 73.7 | 1,610.4  | 75.7    | 74.4      | 64.3 | 60.2 | 79.3     | 40.0      | 48.0           | 73.6 | 71.3 | 73.8    | 61.9        | 72.8    | 76.8   | 62.2 | 41.3 | 63.0           | 72.5       | 71.8       |
+| Base LLM: Hermes2-Yi-34B |            |      |          |         |           |      |      |          |           |                |      |      |         |             |         |        |      |      |                |            |            |
+| Mini-Gemini-HD-34B       | 2880       | 76.2 | 1659.0   | 80.6    | 75.3      | 65.8 | 62.4 | 77.7     | 48.0      | 43.4           | 80.5 | 68.1 | 67.6    | 51.8        | 74.1    | 78.9   | 63.8 | 37.3 | 67.2           | 71.5       | 79.2       |
+| LLaVA-NeXT-34B           | 2880       | 76.0 | 1633.2   | 79.3    | 75.9      | 67.1 | 62.5 | 81.8     | 46.7      | 46.5           | 74.9 | 67.7 | 68.7    | 54.5        | 69.5    | 78.1   | 64.0 | 47.3 | 61.0           | 73.0       | 74.8       |
+| Cambrian-1-34B           | 576        | 76.8 | 1689.3   | 81.4    | 75.3      | 65.8 | 67.0 | 85.6     | 49.7      | 53.2           | 79.7 | 71.9 | 75.6    | 60.0        | 76.7    | 75.5   | 68.5 | 52.7 | 67.8           | 74.0       | 79.7       |
+
+Table 4: Comparison of Cambrian-1 with other leading MLLMs. Cambrian-1 outperforms other open-source models and achieves competitive performance, compared to proprietary models such as GPT-4V, Gemini, and Grok-1.5. Despite using only 576 visual tokens, Cambrian-1 performs better on OCR & Chart and Vision-Centric benchmarks compared to Mini-Gemini-HD and LLaVA-NeXT, which use 2880 tokens.
+
+Data Balancing We follow previous work [\[109,](#page-14-2) [138\]](#page-15-22) to set thresholds t for the number of data points from a single data source. We choose t = 150k, 250k, 350k, and 450k in this section and observe an elbow effect in Table [2—](#page-8-2)finding that a threshold between 250k and 350k work the best for Cambrian-10M. We also plot in Appendix [G.4](#page-31-0) the cumulative sum of counts for entries sorted by counts from tail to head and we see this intermediate threshold prevents explosive heavy tail.
+
+Data Ratio Cambrian-10M is designed for visual instruction tuning. Given the various capabilities of different types of data, it is essential to balance the ratio of these data types. We conduct pilot experiments with a fixed dataset size of 1350k, examining the impact of different data ratios. We visualize the results in Fig. [9](#page-8-2) and summarize our findings as follows: (i) Balancing General, OCR and Language data is crucial. (ii) Performance on knowledge-intensive tasks is influenced by multiple factors, often requiring a mix of OCR, chart, reasoning, and general perception.
+
+Cambrian-7M By applying data filtering to Cambrian-10M with our identified data ratio, we create a smaller but higher-quality dataset called Cambrian-7M. Table [3](#page-8-2) showcases the benefits of a wellbalanced and carefully curated dataset. Despite having fewer samples, Cambrian-7M demonstrates improved performance. We additionally apply system prompts in Cambrian-7M to avoid the "answer machine phenomenon", see more details in Appendix [G.2.](#page-26-0)
+
+### 5 State of the Art Performance
+
+Finally, we leverage the insights from all our previous studies to train a family of MLLMs we call Cambrian-1. We train models using LLM backbones of various scales: LLaMA-3-Instruct-8B [\[4\]](#page-11-21), Vicuna-1.5-13B [\[151\]](#page-16-6), and Hermes-2-Yi-34B [\[139\]](#page-15-23). Our vision component combines four models— OpenAI CLIP ViT-L/14@336, SigLIP ViT-SO400M/14@384, OpenCLIP ConvNeXt-XXL@1024, and DINOv2 ViT-L/14@518 (Section [2.5\)](#page-6-1)—via the Spatial Vision Aggregator (Section [3\)](#page-6-0). We pre-train the connector using 2.5M adapter data and instruction tune using our Cambrian-7M data mix (Section [4.2\)](#page-9-0). Our models are evaluated on the benchmarks categorized in Section [2.1,](#page-2-0) with results presented in Table [4.](#page-9-0) [††](#page-9-1) .
+
+Cambrian-1 surpasses open-source models like LLaVA-NeXT and Mini-Gemini. Thanks to the SVA, Cambrian-1 excels in tasks requiring high-resolution image processing, even with only 576 image tokens—about 1/5 of the tokens used by LLaVA-NeXT and Mini-Gemini. Cambrian-1 also achieves comparable performance to the best proprietary models, such as GPT-4V, Gemini-Pro, and MM-1, on several benchmarks. We provide model weights, open-source code, datasets, and detailed recipes for model training and evaluation. We hope our work will strengthen the open research community and accelerate research in both visual representation learning and multimodal systems.
+
+<span id="page-9-1"></span><sup>††</sup>For the General Average, we note that GPT-4's performance on the GQA test set is low, possibly because other models are trained on the GQA training set, whereas the training set used for GPT-4 is unclear.
+
+### Acknowledgements
+
+We are grateful to LLaVA [\[82\]](#page-13-1) for their excellent codebase, which served as the launching point for our research. Special thanks to Hexu Zhao for extensive discussions and knowledge-sharing around FSDP and large-scale training techniques, and to Jiasen Lu for helpful discussions on TPU and JAX distributed training infrastructure. We also appreciate the assistance and responses from the PyTorchXLA team via GitHub.
+
+We are thankful to Kaiming He for early discussions on multi-modal large language models. We also thank Zhuang Liu, Junlin Han, Yuexiang Zhai, Tianzhe Chu, Daohan Lu, Weiyang Jin, Boyang Zhang, and Jiayi Pan for reviewing this manuscript. We also acknowledge DeepSeek [\[87\]](#page-13-27) for the paper template inspiration.
+
+This work was primarily supported by the Google TPU Research Cloud (TRC) program and the Google Cloud Research Credits program (GCP19980904). Additional support was provided by the NYU IT High Performance Computing resources, services, and staff expertise. S.X. would like to thank the OpenAI Researcher Access program, Open Path AI Foundation, and an Amazon Research award for their support. S.T. is supported by the OpenAI SuperAlignment Fellowship, and E.B. is supported by the NDSEG Fellowship.
+
+### References
+
+- <span id="page-11-14"></span>[1] M. Acharya, K. Kafle, and C. Kanan. "TallyQA: Answering complex counting questions". In: *AAAI*. 2019.
+- <span id="page-11-6"></span>[2] A. Agrawal et al. "Don't just assume; look and answer: Overcoming priors for visual question answering". In: *CVPR*. 2018.
+- <span id="page-11-9"></span>[3] A. Ahmadyan et al. "Objectron: A Large Scale Dataset of Object-Centric Videos in the Wild with Pose Annotations". In: *CVPR* (2021).
+- <span id="page-11-21"></span>[4] AI@Meta. "Llama 3 Model Card". In: (2024).
+- <span id="page-11-19"></span>[5] H. A. Alawwad et al. "Enhancing Textbook Question Answering Task with Large Language Models and Retrieval Augmented Generation". In: *arXiv preprint arXiv:2402.05128* (2024).
+- <span id="page-11-24"></span>[6] J.-B. Alayrac et al. "Flamingo: a visual language model for few-shot learning". In: *NeurIPS*. 2022.
+- <span id="page-11-1"></span>[7] T. Aquinas. *Quaestiones Disputatae de Veritate*. q.2 a.3 arg.19, 1259.
+- <span id="page-11-0"></span>[8] Aristotle. *Metaphysics*. Ed. by T. by W. D. Ross. The Internet Classics Archive, 350BCE.
+- <span id="page-11-23"></span>[9] M. Assran et al. "Self-supervised learning from images with a joint-embedding predictive architecture". In: *CVPR*. 2023.
+- <span id="page-11-22"></span>[10] J. Bai et al. "Qwen Technical Report". In: *arXiv preprint arXiv:2309.16609* (2023).
+- <span id="page-11-13"></span>[11] J. Bai et al. "Qwen-vl: A versatile vision-language model for understanding, localization, text reading, and beyond". In: (2023).
+- <span id="page-11-26"></span>[12] M. E. Banani et al. "Probing the 3D Awareness of Visual Foundation Models". In: *arXiv preprint arXiv:2404.08636* (2024).
+- <span id="page-11-10"></span>[13] G. Baruch et al. "ARKitScenes - A Diverse Real-World Dataset for 3D Indoor Scene Understanding Using Mobile RGB-D Data". In: *NeurIPS Datasets and Benchmarks Track (Round 1)*. 2021.
+- <span id="page-11-17"></span>[14] J. Belouadi, A. Lauscher, and S. Eger. "Automatikz: Text-guided synthesis of scientific vector graphics with tikz". In: *ICLR*. 2024.
+- <span id="page-11-3"></span>[15] R. Birkl, D. Wofk, and M. Müller. "Midas v3. 1–a model zoo for robust monocular relative depth estimation". In: *arXiv preprint arXiv:2307.14460* (2023).
+- <span id="page-11-15"></span>[16] A. F. Biten et al. "Latr: Layout-aware transformer for scene-text vqa". In: *CVPR*. 2022.
+- <span id="page-11-20"></span>[17] A. F. Biten et al. "Scene text visual question answering". In: *ICCV*. 2019.
+- <span id="page-11-8"></span>[18] G. Brazil et al. "Omni3d: A large benchmark and model for 3d object detection in the wild". In: *CVPR*. 2023.
+- <span id="page-11-27"></span>[19] J. Buchner. *imagehash (fork)*. <https://github.com/JohannesBuchner/imagehash>. 2021.
+- <span id="page-11-11"></span>[20] H. Caesar et al. "nuscenes: A multimodal dataset for autonomous driving". In: *CVPR*. 2020.
+- <span id="page-11-28"></span>[21] J. Cha et al. "Honeybee: Locality-enhanced projector for multimodal llm". In: *CVPR*. 2024.
+- <span id="page-11-16"></span>[22] S. Cha et al. "Visually Dehallucinative Instruction Generation: Know What You Don't Know". In: *arXiv preprint arXiv:2402.09717* (2024).
+- <span id="page-11-2"></span>[23] D. J. Chalmers. "Does Thought Require Sensory Grounding? From Pure Thinkers to Large Language Models". In: *Proceedings and Addresses of the American Philosophical Association* 97 (2023), pp. 22–45.
+- <span id="page-11-4"></span>[24] Y. Chang et al. "A survey on evaluation of large language models". In: *ACM Transactions on Intelligent Systems and Technology* 15.3 (2024), pp. 1–45.
+- <span id="page-11-18"></span>[25] G. H. Chen et al. "ALLaVA: Harnessing GPT4V-synthesized Data for A Lite Vision-Language Model". In: *arXiv preprint arXiv:2402.11684* (2024).
+- <span id="page-11-7"></span>[26] L. Chen et al. "Are We on the Right Way for Evaluating Large Vision-Language Models?" In: *arXiv preprint arXiv:2403.20330* (2024).
+- <span id="page-11-5"></span>[27] L. Chen et al. "Sharegpt4v: Improving large multi-modal models with better captions". In: *arXiv preprint arXiv:2311.12793* (2023).
+- <span id="page-11-12"></span>[28] X. Chen et al. "Pali: A jointly-scaled multilingual language-image model". In: *ICLR*. 2023.
+- <span id="page-11-25"></span>[29] X. Chen, S. Xie, and K. He. "An empirical study of training self-supervised vision transformers". In: *ICCV*. 2021.
+
+- <span id="page-12-21"></span>[30] Z. Chen et al. "How far are we to gpt-4v? closing the gap to commercial multimodal models with open-source suites". In: *arXiv preprint arXiv:2404.16821* (2024).
+- <span id="page-12-15"></span>[31] Z. Chen et al. "Finqa: A dataset of numerical reasoning over financial data". In: *EMNLP*. 2021.
+- <span id="page-12-16"></span>[32] Z. Cheng et al. "HiTab: A hierarchical table dataset for question answering and natural language generation". In: *ACL*. 2022.
+- <span id="page-12-26"></span>[33] M. Cherti et al. "Reproducible scaling laws for contrastive language-image learning". In: *CVPR*. 2023.
+- <span id="page-12-27"></span>[34] W.-L. Chiang et al. "Chatbot arena: An open platform for evaluating llms by human preference". In: *arXiv preprint arXiv:2403.04132* (2024).
+- <span id="page-12-28"></span>[35] X. Chu et al. "Mobilevlm v2: Faster and stronger baseline for vision language model". In: *arXiv preprint arXiv:2402.03766* (2024).
+- <span id="page-12-19"></span>[36] M. Conover et al. *Free Dolly: Introducing the World's First Truly Open Instruction-Tuned LLM*. 2023. URL: [https://www.databricks.com/blog/2023/04/12/dolly-first](https://www.databricks.com/blog/2023/04/12/dolly-first-open-commercially-viable-instruction-tuned-llm)[open-commercially-viable-instruction-tuned-llm](https://www.databricks.com/blog/2023/04/12/dolly-first-open-commercially-viable-instruction-tuned-llm) (visited on 06/30/2023).
+- <span id="page-12-12"></span>[37] W. Dai et al. "Instructblip: Towards general-purpose vision-language models with instruction tuning". In: *NeurIPS*. 2024.
+- <span id="page-12-22"></span>[38] H. Dong et al. "Rlhf workflow: From reward modeling to online rlhf". In: *arXiv preprint arXiv:2405.07863* (2024).
+- <span id="page-12-11"></span>[39] A. Dosovitskiy et al. "An image is worth 16x16 words: Transformers for image recognition at scale". In: *ICLR*. 2021.
+- <span id="page-12-25"></span>[40] A. Fang et al. "Data filtering networks". In: *ICLR*. 2024.
+- <span id="page-12-2"></span>[41] X. Fu et al. "BLINK: Multimodal Large Language Models Can See but Not Perceive". In: *arXiv preprint arXiv:2404.12390* (2024).
+- <span id="page-12-18"></span>[42] J. Gao et al. "G-llava: Solving geometric problem with multi-modal large language model". In: *arXiv preprint arXiv:2312.11370* (2023).
+- <span id="page-12-23"></span>[43] P. Gao et al. "Llama-adapter v2: Parameter-efficient visual instruction model". In: *arXiv preprint arXiv:2304.15010* (2023).
+- <span id="page-12-10"></span>[44] P. Gao et al. "SPHINX-X: Scaling Data and Parameters for a Family of Multi-modal Large Language Models". In: *arXiv preprint arXiv:2402.05935* (2024).
+- <span id="page-12-5"></span>[45] Y. Ge et al. "Planting a seed of vision in large language model". In: *arXiv preprint arXiv:2307.08041* (2023).
+- <span id="page-12-9"></span>[46] A. Geiger, P. Lenz, and R. Urtasun. "Are we ready for Autonomous Driving? The KITTI Vision Benchmark Suite". In: *CVPR*. 2012.
+- <span id="page-12-1"></span>[47] R. Geirhos et al. "Shortcut learning in deep neural networks". In: *Nature Machine Intelligence* (2020).
+- <span id="page-12-4"></span>[48] R. Girshick et al. "Rich feature hierarchies for accurate object detection and semantic segmentation". In: *CVPR*. 2014.
+- <span id="page-12-24"></span>[49] Google. *Gemini*. 2023.
+- <span id="page-12-8"></span>[50] Y. Goyal et al. "Making the v in vqa matter: Elevating the role of image understanding in visual question answering". In: *CVPR*. 2017.
+- <span id="page-12-14"></span>[51] D. Gurari et al. "Vizwiz grand challenge: Answering visual questions from blind people". In: *CVPR*. 2018.
+- <span id="page-12-3"></span>[52] K. He et al. "Masked autoencoders are scalable vision learners". In: *CVPR*. 2022.
+- <span id="page-12-20"></span>[53] X. He et al. "PathVQA: 30000+ Questions for Medical Visual Question Answering". In: *CoRR* abs/2003.10286 (2020).
+- <span id="page-12-6"></span>[54] T. Hiippala et al. "AI2D-RST: A multimodal corpus of 1000 primary school science diagrams". In: *Language Resources and Evaluation* 55 (2021), pp. 661–688.
+- <span id="page-12-0"></span>[55] J. Hoffmann et al. "Training compute-optimal large language models". In: *NeurIPS* (2023).
+- <span id="page-12-17"></span>[56] Y.-C. Hsiao, F. Zubach, M. Wang, et al. "Screenqa: Large-scale question-answer pairs over mobile app screenshots". In: *arXiv preprint arXiv:2209.08199* (2022).
+- <span id="page-12-7"></span>[57] D. A. Hudson and C. D. Manning. "GQA: A New Dataset for Real-World Visual Reasoning and Compositional Question Answering". In: *CVPR*. 2019.
+- <span id="page-12-13"></span>[58] A. Jaegle et al. "Perceiver: General perception with iterative attention". In: *ICML*. 2021.
+
+- <span id="page-13-12"></span>[59] J. Johnson et al. "Clevr: A diagnostic dataset for compositional language and elementary visual reasoning". In: *CVPR*. 2017.
+- <span id="page-13-29"></span>[60] N. Jouppi et al. "Tpu v4: An optically reconfigurable supercomputer for machine learning with hardware support for embeddings". In: *Proceedings of the 50th Annual International Symposium on Computer Architecture*. 2023.
+- <span id="page-13-13"></span>[61] K. Kafle et al. "Dvqa: Understanding data visualizations via question answering". In: *CVPR*. 2018.
+- <span id="page-13-23"></span>[62] S. Kantharaj et al. "Chart-to-text: A large-scale benchmark for chart summarization". In: *ACL*. 2022.
+- <span id="page-13-9"></span>[63] S. Karamcheti et al. "Prismatic vlms: Investigating the design space of visually-conditioned language models". In: *arXiv preprint arXiv:2402.07865* (2024).
+- <span id="page-13-19"></span>[64] M. Kazemi et al. "Geomverse: A systematic evaluation of large models for geometric reasoning". In: 2023.
+- <span id="page-13-25"></span>[65] A. Kembhavi et al. "A diagram is worth a dozen images". In: *ECCV*. 2016.
+- <span id="page-13-18"></span>[66] D. Kiela et al. "The hateful memes challenge: Detecting hate speech in multimodal memes". In: *NeurIPS*. 2020.
+- <span id="page-13-14"></span>[67] G. Kim et al. "Donut: Document understanding transformer without ocr". In: *ECCV*. 2022.
+- <span id="page-13-3"></span>[68] A. Kirillov et al. "Segment anything". In: *ICCV*. 2023.
+- <span id="page-13-22"></span>[69] R. Krishna et al. "Visual Genome: Connecting Language and Vision Using Crowdsourced Dense Image Annotations". In: *IJCV* (2016).
+- <span id="page-13-15"></span>[70] LAION. *laion/gpt4v-dataset*. 2023.
+- <span id="page-13-17"></span>[71] H. Laurençon, L. Tronchon, and V. Sanh. "Unlocking the conversion of Web Screenshots into HTML Code with the WebSight Dataset". In: *arXiv preprint arXiv:2403.09029* (2024).
+- <span id="page-13-11"></span>[72] H. Laurençon et al. "What matters when building vision-language models?" In: *arXiv preprint arXiv:2405.02246* (2024).
+- <span id="page-13-26"></span>[73] A. C. Li et al. "Internet Explorer: Targeted Representation Learning on the Open Web". In: *ICML*. 2023.
+- <span id="page-13-30"></span>[74] A. C. Li et al. "Your diffusion model is secretly a zero-shot classifier". In: *ICCV*. 2023.
+- <span id="page-13-6"></span>[75] B. Li et al. *LLaVA-NeXT: Stronger LLMs Supercharge Multimodal Capabilities in the Wild*. 2024.
+- <span id="page-13-16"></span>[76] L. Li et al. "Multimodal ArXiv: A Dataset for Improving Scientific Comprehension of Large Vision-Language Models". In: *arXiv preprint arXiv:2403.00231* (2024).
+- <span id="page-13-7"></span>[77] Y. Li et al. "Mini-gemini: Mining the potential of multi-modality vision language models". In: *arXiv preprint arXiv:2403.18814* (2024).
+- <span id="page-13-20"></span>[78] W. Lian et al. *OpenOrca: An Open Dataset of GPT Augmented FLAN Reasoning Traces*. <https://https://huggingface.co/Open-Orca/OpenOrca>. 2023.
+- <span id="page-13-2"></span>[79] T.-Y. Lin et al. "Microsoft coco: Common objects in context". In: *ECCV*. 2014.
+- <span id="page-13-8"></span>[80] H. Liu et al. "Improved baselines with visual instruction tuning". In: *arXiv preprint arXiv:2310.03744* (2023).
+- <span id="page-13-0"></span>[81] H. Liu et al. *LLaVA-NeXT: Improved reasoning, OCR, and world knowledge*. 2024.
+- <span id="page-13-1"></span>[82] H. Liu et al. "Visual Instruction Tuning". In: *NeurIPS*. 2023.
+- <span id="page-13-4"></span>[83] Y. Liu et al. "Mmbench: Is your multi-modal model an all-around player?" In: *arXiv preprint arXiv:2307.06281* (2023).
+- <span id="page-13-5"></span>[84] Y. Liu et al. "On the hidden mystery of ocr in large multimodal models". In: *arXiv preprint arXiv:2305.07895* (2023).
+- <span id="page-13-28"></span>[85] Z. Liu and K. He. "A Decade's Battle on Dataset Bias: Are We There Yet?" In: *arXiv preprint arXiv:2403.08632* (2024).
+- <span id="page-13-10"></span>[86] Z. Liu et al. "A convnet for the 2020s". In: *CVPR*. 2022.
+- <span id="page-13-27"></span>[87] H. Lu et al. "DeepSeek-VL: towards real-world vision-language understanding". In: *arXiv preprint arXiv:2403.05525* (2024).
+- <span id="page-13-24"></span>[88] P. Lu et al. "Dynamic prompt learning via policy gradient for semi-structured mathematical reasoning". In: *ICLR*. 2023.
+- <span id="page-13-21"></span>[89] P. Lu et al. "Iconqa: A new benchmark for abstract diagram understanding and visual language reasoning". In: *NeurIPS*. 2021.
+
+- <span id="page-14-19"></span>[90] P. Lu et al. "Inter-GPS: Interpretable geometry problem solving with formal language and symbolic reasoning". In: *ACL*. 2021.
+- <span id="page-14-6"></span>[91] P. Lu et al. "Learn to explain: Multimodal reasoning via thought chains for science question answering". In: *NeurIPS*. 2022.
+- <span id="page-14-7"></span>[92] P. Lu et al. "Mathvista: Evaluating mathematical reasoning of foundation models in visual contexts". In: *ICLR* (2023).
+- <span id="page-14-21"></span>[93] Z. Luo et al. "Wizardcoder: Empowering code large language models with evol-instruct". In: *ICLR*. 2024.
+- <span id="page-14-10"></span>[94] A. Majumdar et al. "OpenEQA: Embodied Question Answering in the Era of Foundation Models". In: *2nd Workshop on Mobile Manipulation and Embodied Intelligence at ICRA 2024*. 2024.
+- <span id="page-14-15"></span>[95] K. Marino et al. "OK-VQA: A Visual Question Answering Benchmark Requiring External Knowledge". In: *CVPR*. 2019.
+- <span id="page-14-8"></span>[96] A. Masry et al. "Chartqa: A benchmark for question answering about charts with visual and logical reasoning". In: *ACL*. 2022.
+- <span id="page-14-9"></span>[97] M. Mathew, D. Karatzas, and C. Jawahar. "Docvqa: A dataset for vqa on document images". In: *WACV*. 2021.
+- <span id="page-14-11"></span>[98] B. McKinzie et al. "Mm1: Methods, analysis & insights from multimodal llm pre-training". In: *arXiv preprint arXiv:2403.09611* (2024).
+- <span id="page-14-20"></span>[99] A. Mitra et al. *Orca-Math: Unlocking the potential of SLMs in Grade School Math*. 2024. arXiv: [2402.14830 \[cs.CL\]](https://arxiv.org/abs/2402.14830).
+- <span id="page-14-14"></span>[100] "OCR-VQA: Visual Question Answering by Reading Text in Images". In: 2019.
+- <span id="page-14-25"></span>[101] OpenAI. *ChatGPT*. 2022.
+- <span id="page-14-26"></span>[102] OpenAI. *gpt4o*. 2024.
+- <span id="page-14-3"></span>[103] M. Oquab et al. "Dinov2: Learning robust visual features without supervision". In: *TMLR* (2023).
+- <span id="page-14-23"></span>[104] L. Ouyang et al. "Training language models to follow instructions with human feedback". In: *NeurIPS*. 2022.
+- <span id="page-14-0"></span>[105] A. Parker. *In the blink of an eye: how vision sparked the big bang of evolution*. 2003.
+- <span id="page-14-18"></span>[106] P. Pasupat and P. Liang. "Compositional semantic parsing on semi-structured tables". In: *ACL*. 2015.
+- <span id="page-14-1"></span>[107] J. Piaget, M. Cook, et al. *The origins of intelligence in children*. Vol. 8. 5. International Universities Press New York, 1952.
+- <span id="page-14-17"></span>[108] J. Pont-Tuset et al. "Connecting Vision and Language with Localized Narratives". In: *ECCV*. 2020.
+- <span id="page-14-2"></span>[109] A. Radford et al. "Learning transferable visual models from natural language supervision". In: *ICML*. 2021.
+- <span id="page-14-24"></span>[110] R. Rafailov et al. "Direct preference optimization: Your language model is secretly a reward model". In: *NeurIPS*. 2024.
+- <span id="page-14-12"></span>[111] M. Roberts et al. "Hypersim: A Photorealistic Synthetic Dataset for Holistic Indoor Scene Understanding". In: *ICCV*. 2021.
+- <span id="page-14-5"></span>[112] R. Rombach et al. "High-Resolution Image Synthesis With Latent Diffusion Models". In: *CVPR*. 2022.
+- <span id="page-14-4"></span>[113] O. Russakovsky et al. "Imagenet large scale visual recognition challenge". In: *IJCV* (2015).
+- <span id="page-14-27"></span>[114] O. Sanseviero. *LLM Evals and Benchmarking*. 2022.
+- <span id="page-14-13"></span>[115] C. Schuhmann et al. "Laion-5b: An open large-scale dataset for training next generation image-text models". In: *NeurIPS*. 2022.
+- <span id="page-14-22"></span>[116] D. Schwenk et al. "A-OKVQA: A Benchmark for Visual Question Answering using World Knowledge". In: *ECCV*. 2022.
+- <span id="page-14-28"></span>[117] M. Shridhar et al. "ALFWorld: Aligning Text and Embodied Environments for Interactive Learning". In: *ICLR*. 2021.
+- <span id="page-14-16"></span>[118] C. Si et al. "Design2Code: How Far Are We From Automating Front-End Engineering?" In: *arXiv preprint arXiv:2403.03163* (2024).
+
+- <span id="page-15-19"></span>[119] O. Sidorov et al. *TextCaps: a Dataset for Image Captioning with Reading Comprehension*. 2020. arXiv: [2003.12462 \[cs.CV\]](https://arxiv.org/abs/2003.12462).
+- <span id="page-15-4"></span>[120] A. Singh et al. "Towards vqa models that can read". In: *CVPR*. 2019.
+- <span id="page-15-7"></span>[121] S. Song, S. P. Lichtenberg, and J. Xiao. "Sun rgb-d: A rgb-d scene understanding benchmark suite". In: *CVPR*. 2015.
+- <span id="page-15-28"></span>[122] Q. Sun et al. "Eva-clip: Improved training techniques for clip at scale". In: *arXiv preprint arXiv:2303.15389* (2023).
+- <span id="page-15-14"></span>[123] R. Tanaka, K. Nishida, and S. Yoshida. "VisualMRC: Machine Reading Comprehension on Document Images". In: *AAAI*. 2021.
+- <span id="page-15-11"></span>[124] B. J. Tang, A. Boggust, and A. Satyanarayan. "Vistext: A benchmark for semantically rich chart captioning". In: *arXiv preprint arXiv:2307.05356* (2023).
+- <span id="page-15-24"></span>[125] S. Tong, E. Jones, and J. Steinhardt. "Mass-producing failures of multimodal systems with language models". In: *NeurIPS*. 2024.
+- <span id="page-15-1"></span>[126] S. Tong et al. "Eyes wide shut? exploring the visual shortcomings of multimodal llms". In: *CVPR*. 2024.
+- <span id="page-15-26"></span>[127] H. Touvron et al. "LLaMA 2: Open foundation and fine-tuned chat models". In: (2023).
+- <span id="page-15-27"></span>[128] H. Touvron et al. "LLaMA: Open and efficient foundation language models". In: *arXiv preprint arXiv:2302.13971* (2023).
+- <span id="page-15-12"></span>[129] H. Tu et al. "How many unicorns are in this image? a safety evaluation benchmark for vision llms". In: *arXiv preprint arXiv:2311.16101* (2023).
+- <span id="page-15-8"></span>[130] K. Vishniakov, Z. Shen, and Z. Liu. "ConvNet vs Transformer, Supervised vs CLIP: Beyond ImageNet Accuracy". In: *ICML*. 2024.
+- <span id="page-15-16"></span>[131] J. Wang et al. "To see is to believe: Prompting gpt-4v for better visual instruction tuning". In: *arXiv preprint arXiv:2311.07574* (2023).
+- <span id="page-15-17"></span>[132] K. Wang et al. "Measuring Multimodal Mathematical Reasoning with MATH-Vision Dataset". In: *arXiv preprint arXiv:2402.14804* (2024).
+- <span id="page-15-29"></span>[133] J. Wei et al. "Chain-of-thought prompting elicits reasoning in large language models". In: *NeurIPS*. 2022.
+- <span id="page-15-9"></span>[134] C. Wendler. *wendlerc/RenderedText*. 2023.
+- <span id="page-15-13"></span>[135] H. Wu et al. "Q-instruct: Improving low-level visual abilities for multi-modality foundation models". In: *arXiv preprint arXiv:2311.06783* (2023).
+- <span id="page-15-3"></span>[136] P. Wu and S. Xie. "V\*: Guided Visual Search as a Core Mechanism in Multimodal LLMs". In: *CVPR*. 2024.
+- <span id="page-15-5"></span>[137] xAI. *grok*. 2024.
+- <span id="page-15-22"></span>[138] H. Xu et al. "Demystifying clip data". In: *ICLR*. 2024.
+- <span id="page-15-23"></span>[139] A. Young et al. "Yi: Open foundation models by 01. ai". In: *arXiv preprint arXiv:2403.04652* (2024).
+- <span id="page-15-10"></span>[140] L. Yu et al. *Modeling Context in Referring Expressions*. 2016. arXiv: [1608.00272 \[cs.CV\]](https://arxiv.org/abs/1608.00272).
+- <span id="page-15-25"></span>[141] T. Yu et al. "Rlhf-v: Towards trustworthy mllms via behavior alignment from fine-grained correctional human feedback". In: *arXiv preprint arXiv:2312.00849* (2023).
+- <span id="page-15-18"></span>[142] X. Yue et al. "Mammoth: Building math generalist models through hybrid instruction tuning". In: *ICLR*. 2024.
+- <span id="page-15-6"></span>[143] X. Yue et al. "Mmmu: A massive multi-discipline multimodal understanding and reasoning benchmark for expert agi". In: *CVPR*. 2024.
+- <span id="page-15-2"></span>[144] M. Yuksekgonul et al. "When and why vision-language models behave like bags-of-words, and what to do about it?" In: *ICLR*. 2022.
+- <span id="page-15-0"></span>[145] X. Zhai et al. "Sigmoid loss for language image pre-training". In: *ICCV*. 2023.
+- <span id="page-15-20"></span>[146] Y. Zhai et al. "Fine-Tuning Large Vision-Language Models as Decision-Making Agents via Reinforcement Learning". In: *arXiv preprint arXiv:2405.10292* (2024).
+- <span id="page-15-21"></span>[147] Y. Zhai et al. "Investigating the catastrophic forgetting in multimodal large language models". In: *CPAL*. 2024.
+- <span id="page-15-15"></span>[148] C. Zhang et al. "Raven: A dataset for relational and analogical visual reasoning". In: *CVPR*. 2019.
+
+- <span id="page-16-5"></span>[149] Y. Zhang et al. "Llavar: Enhanced visual instruction tuning for text-rich image understanding". In: *arXiv preprint arXiv:2306.17107* (2023).
+- <span id="page-16-8"></span>[150] Y. Zhao et al. "Pytorch fsdp: experiences on scaling fully sharded data parallel". In: *arXiv preprint arXiv:2304.11277* (2023).
+- <span id="page-16-6"></span>[151] L. Zheng et al. "Judging llm-as-a-judge with mt-bench and chatbot arena". In: *NeurIPS*. 2024.
+- <span id="page-16-4"></span>[152] T. Zheng et al. "OpenCodeInterpreter: Integrating Code Generation with Execution and Refinement". In: *arXiv preprint arXiv:2402.14658* (2024).
+- <span id="page-16-3"></span>[153] V. Zhong, C. Xiong, and R. Socher. "Seq2sql: Generating structured queries from natural language using reinforcement learning". In: 2017.
+- <span id="page-16-0"></span>[154] B. Zhou et al. "Semantic understanding of scenes through the ade20k dataset". In: *IJCV* (2019).
+- <span id="page-16-10"></span>[155] K. Zhou et al. "Don't Make Your LLM an Evaluation Benchmark Cheater". In: *arXiv preprint arXiv:2311.01964* (2023).
+- <span id="page-16-7"></span>[156] B. Zhu et al. *Starling-7b: Improving llm helpfulness & harmlessness with rlaif*. 2023.
+- <span id="page-16-9"></span>[157] D. Zhu et al. "Minigpt-4: Enhancing vision-language understanding with advanced large language models". In: *arXiv preprint arXiv:2304.10592* (2023).
+- <span id="page-16-2"></span>[158] F. Zhu et al. "TAT-QA: A question answering benchmark on a hybrid of tabular and textual content in finance". In: *ACL*. 2021.
+- <span id="page-16-1"></span>[159] Y. Zhu et al. "Visual7w: Grounded question answering in images". In: *CVPR*. 2016.
+
+### A Broader Discussion
+
+We advocate for using MLLMs as an interface to evaluate visual representations, as previous benchmarks are becoming saturated and do not adequately reflect the diverse and complex perception challenges of the real world. Our work highlights the current gap between language-supervised models and self-supervised learning models and demonstrates the potential of bridging this gap. However, it is known that features of language-supervised models behave like a *bag-of-words* [\[125,](#page-15-24) [144\]](#page-15-2), underscoring the need for advancements in vision-only models to ensure better visual understanding. We hope to inspire future research into developing better vision-only models intended to be adapted into the MLLM setting, that more effectively leverage large-scale datasets [\[85\]](#page-13-28) and preserve the advantages in visual grounding [\[126\]](#page-15-1).
+
+As we observe in Table [4,](#page-9-0) a well-trained open-source model such as Cambrian-1 can match or even outperform proprietary models on many existing benchmarks. However, the use and evaluation of MLLMs extend far beyond the current scope of benchmarks—to conversational ability, creativity, reliability, and overall user experience. Developing models solely based on benchmark results can result in an "answer machine", over-optimized for benchmarks but lacking in practical interaction capabilities. Therefore, the development of MLLMs that better align with human and societal needs is a continuously evolving process, both in terms of evaluation and model development.
+
+Our current Cambrian-1 model uses a moderate number of visual tokens and does not adopt the anyresolution strategy [\[30,](#page-12-21) [77,](#page-13-7) [81\]](#page-13-0) to handle ultra high-resolution images or those with extreme aspect ratios, which require a larger number of visual tokens. For specialized tasks like V\*Bench [\[136\]](#page-15-3), which require processing ultra high-resolution images, increasing the resolution and number of visual tokens could lead to an HD version of the Cambrian-1 model.
+
+One promising direction for post-training alignment is through reinforcement learning rather than supervised fine-tuning. Many MLLM studies, including Cambrian, primarily focus on supervised fine-tuning. Yet, recent advancements in LLMs [\[38,](#page-12-22) [104,](#page-14-23) [110,](#page-14-24) [156\]](#page-16-7) and some in MLLMs [\[141,](#page-15-25) [146\]](#page-15-20) suggest that reinforcement learning from human or environmental feedback can further improve models, potentially surpassing the limits of supervised fine-tuning, especially in decision-making abilities.
+
+Cambrian-10M (Fig. [8](#page-8-1) and Section [4\)](#page-8-0) provides a rich pool of data for studying data curation in fine-tuning MLLMs. Our work takes an initial step in curating higher-quality data to enable more efficient and effective instruction tuning. We believe there is room for further improvement in the data curation pipeline, and we hope this work can serve as a foundation for future research.
+
+Additionally, training large-scale models requires careful design of model sharding, data sharding, and infrastructure adaptations. In this work, we train our model on TPU-V4 [\[60\]](#page-13-29) with FSDP [\[150\]](#page-16-8) using TorchXLA. We share our experiences, technical challenges, and solutions in Appendix [C.](#page-18-0) We also open-source our implementation and provide tutorials to help the community undertake large-scale training more efficiently.
+
+To conclude, Cambrian-1 introduces a family of state-of-the-art MLLM models that achieve top performance across diverse benchmarks and excel in visual-centric tasks. We provide model weights, open-source code, datasets, and detailed recipes for model training and evaluation. We hope our work will strengthen the open research community and accelerate future advancements in both visual representation learning and multimodal systems.
+
+### <span id="page-17-0"></span>B Multimodal LLMs: Preliminaries and Related Work
+
+The key components of MLLM research include the *Large Language Model*, *Visual Encoder*, *Multimodal Connector*, *Data Curation Pipeline*, *Instruction Tuning Strategy*, and *Evaluation & Benchmarking*. Each component has its intricacies, and understanding their interactions presents significant challenges. Our study investigates these aspects from a vision-centric perspective.
+
+Large Language Model Advanced LLMs [\[4,](#page-11-21) [101,](#page-14-25) [127,](#page-15-26) [128\]](#page-15-27) are the foundation of an MLLM. After instruction-tuning on multimodal data, these models can be prompted to solve a variety of complex tasks and generate free-form responses leveraging input from a visual encoder. Recent MLLM research focuses on enhancing the LLM backbone [\[10,](#page-11-22) [75,](#page-13-6) [81\]](#page-13-0), resulting in improved performance on benchmarks like MMMU [\[143\]](#page-15-6) and AI2D [\[54\]](#page-12-6). However, this improvement raises the concern that our current *multimodal* evaluation is biased by the development of LLMs, neglecting a true assessment of visual perception. For example, some benchmarks such as MMMU [\[143\]](#page-15-6) are dominated by LLM capabilities, underscoring the need for evaluations that genuinely assess multimodality (see Section [2.1\)](#page-2-0).
+
+Visual Encoder Most MLLMs utilize language-supervised models like CLIP [\[109,](#page-14-2) [122,](#page-15-28) [145\]](#page-15-0), which benefit from the massive scale of noisy web image-text data. However, there is a much broader pool of visual models that learn representations using only visual signals—such as self-supervised models [\[9,](#page-11-23) [103\]](#page-14-3), segmentation [\[68\]](#page-13-3), depth-supervised [\[15\]](#page-11-3), and diffusion models [\[74,](#page-13-30) [112\]](#page-14-5) (see Fig. [2\)](#page-2-1). Recent work [\[87,](#page-13-27) [126\]](#page-15-1) advocates for incorporating these diverse vision models into MLLMs. In this study, we systematically examine the impact of various vision backbones on MLLM performance (Section [1\)](#page-1-1) and explore the benefits of model ensembles (Section [2.5\)](#page-6-1).
+
+Multimodal Connector Representations from a visual encoder cannot be natively processed by an LLM—they must be mapped into the LLM token space by a *connector*. There are three primary approaches to connector design: Resamplers [\[6\]](#page-11-24), Q-Formers [\[11,](#page-11-13) [37\]](#page-12-12), and MLP Projectors [\[43,](#page-12-23) [80,](#page-13-8) [82,](#page-13-1) [157\]](#page-16-9). We begin our exploration using an MLP projector, which is highly effective but presents challenges: the visual token count grows quadratically with image resolution, inhibiting scaling context length input resolution. For example, LLaVA-Next [\[81\]](#page-13-0) requires 2880 visual tokens to process one 672px image. To address this, we explore new vision connector designs that process high-resolution images while maintaining a smaller number of visual tokens (Section [3\)](#page-6-0).
+
+Instruction Tuning Data Visual instruction tuning data is crucial but hard to collect, as it rarely naturally exists on the internet. Previous work [\[37,](#page-12-12) [80,](#page-13-8) [98\]](#page-14-11) transforms existing VQA benchmarks [\[50,](#page-12-8) [69\]](#page-13-22) into instruction tuning data, showing marked MLLM performance improvements. With this inspiration, we collect all VQA benchmarks and visual interaction data that we can find (Fig. [8\)](#page-8-1), study data balancing and category mixtures (Section [4.2\)](#page-9-0), and develop an internet data collection engine to fill in the gaps (Section [4.1\)](#page-8-3).
+
+Instruction Tuning Most current MLLMs leverage pre-trained LLMs and visual encoders, finetuning the LLM and connector using visual instruction tuning data. Some aspects of the tuning recipe are up for debate, including whether to pre-train the connector before joint fine-tuning with the LLM , and whether to freeze or unfreeze the vision encoder during fine-tuning [\[63,](#page-13-9) [98\]](#page-14-11). Additionally, some recent proprietary models explore end-to-end training from scratch [\[49,](#page-12-24) [102\]](#page-14-26). In this work, we use pre-trained models and revisit the debated recipe aspects with extensive studies, providing more insights for future MLLM research (Section [2.3\)](#page-3-1).
+
+Evaluation & Benchmarking There is an extensive set of benchmarks that evaluate various aspects of MLLMs, such as perception [\[45,](#page-12-5) [83\]](#page-13-4), knowledge [\[91,](#page-14-6) [92\]](#page-14-7), chart interpretation [\[84,](#page-13-5) [96\]](#page-14-8), and visual capabilities [\[126,](#page-15-1) [136\]](#page-15-3). Instead of over-optimizing for specific benchmarks, we advocate for examining aggregates of benchmarks that focus on specific capabilities. To achieve this, we analyze existing benchmarks, categorize them, and assess the extent to which they measure *multimodality* (Section [2.1\)](#page-2-0). Additionally, we find there are currently few benchmarks focused on vision-centric evaluation, and those that do exist contain relatively few images, leading to higher variance during evaluation. To address this issue, we propose a new vision-centric benchmark by reformulating classic vision tasks (Section [2.2\)](#page-3-0).
+
+### <span id="page-18-0"></span>C Training, Infrastructure, and Implementation
+
+All models in this paper were trained using TPU-V4 pods [\[60\]](#page-13-29); we evaluate using NVIDIA A6000, A100, and H100 cards. The experiments in Section [2.4](#page-4-0) require less than 24 hours on a TPU-V4-128, while our final Cambrian-1 models are trained in less than 4 days on a TPU-V4-512.
+
+To enable and facilitate large-scale parallel training on TPUs, we employ TorchXLA with FSDP [\[150\]](#page-16-8) to handle training sharding and parallelism. Training a large-scale multimodal model with TorchXLA on TPU is a challenging journey, as there are no open-source codebases and many critical features are not supported in the TorchXLA or TorchXLA FSDP libraries. To provide a brief taste of the difficulties: TPUs require a static graph throughout the program, which requires ground-up rewrites of dynamically-written open-source PyTorch codebases; model resuming is not implemented in TorchXLA, which is especially crucial when training on preemptable TPUs; existing TorchXLA FSDP tutorials fail to compile due to version changes in TorchXLA, updates in Hugging Face
+
+Transformers & Accelerate, or simply inherent issues with the tutorial; loading very large models (over 30 billion parameters) with the TorchXLA FSDP library is natively impossible due to the 100GB memory constraints of TPU-V4s, and requires extensive workarounds.
+
+To this end, we have rewritten or developed many new functions to make this research possible. For instance, we rewrote the TorchXLA FSDP Sharding API to load very large models; we implemented model resuming on TorchXLA; we rewrote parts of the Hugging Face Transformers FSDP and gradient checkpointing implementations to enable large-scale FSDP training. We are committed to open-sourcing our codebase and publishing a comprehensive tutorial to share our insights, with the hope of inspiring and supporting future research and open-source contributions to the TPU and TorchXLA ecosystem.
+
+### <span id="page-19-1"></span>D Analyzing the Benchmarks
+
+### MLLM Benchmark Performance Confusion Matrix
+
+We evaluate the benchmark scores for our one-stage, two-stage finetune-only and hybrid models, and then plot the correlation matrix for the pool of MLLM benchmarks. The correlation plot displays in Fig. [10.](#page-19-0) The result demonstrates that MMMU is less correlated in measuring model performance to other benchmarks. Nonetheless, we acknowledge it is widely used and therefore cluster it into knowledge-based QAs based on the nature of their questions.
+
+<span id="page-19-0"></span>Figure 10: Correlation matrix for MLLM benchmarks. The correlation matrix for MLLM benchmarks with respect to different vision backbones. The correlation matrix helps us to analysis and group benchmarks.
+
+## <span id="page-19-2"></span>E Cambrian Vision-Centric Benchmark (CV-Bench)
+
+CV-Bench Curation Below we describe the procedure for programmatically constructing questions for each task. To ensure reliability, we also *manually inspect each question*, removing those that are unclear, ambiguous, or erroneous.
+
+*Spatial Relationship (2D).* We consider images with two distinct ground-truth object categories and use visual prompts (bounding boxes) to avoid ambiguity when multiple instances are present. In these questions, we designate an anchor object, and the question asks for the direction of the other object relative to this anchor.
+
+*Object Counting (2D).* This tests the model's ability to count objects. When generating options for these questions, we construct multiple-choice options that are similar to the correct answer. For
+
+<span id="page-20-0"></span>Figure 11: Cambrian Vision-Centric Benchmark (CV-Bench). We repurpose standard vision benchmarks to evaluate the fundamental 2D and 3D visual understanding of MLLMs. See Section [2.2](#page-3-0) for more details.
+
+| Type | Task                    | Description                                                                                                                     | Sources        | # Samples |
+|------|-------------------------|---------------------------------------------------------------------------------------------------------------------------------|----------------|-----------|
+| 2D   | Spatial<br>Relationship | Determine the relative position of an object w.r.t.<br>the anchor object.<br>Consider left-right or top<br>bottom relationship. | ADE20K<br>COCO | 650       |
+|      | Object<br>Count         | Determine the number of instances present in the<br>image.                                                                      | ADE20K<br>COCO | 788       |
+| 3D   | Depth<br>Order          | Determine which of the two distinct objects is<br>closer to the camera.                                                         | Omni3D         | 600       |
+|      | Relative<br>Distance    | Determine which of the two distinct objects is<br>closer to the anchor object.                                                  | Omni3D         | 600       |
+
+Table 5: Breakdown of the 2D and 3D tasks evaluated in the Cambrian Vision-Centric Benchmark (CV-Bench). The examples are sourced from ADE20K [\[154\]](#page-16-0), COCO [\[79\]](#page-13-2), and Omni3D [\[18\]](#page-11-8).
+
+example, if the correct answer is 4, the options might be 2, 3, 4, 5, & 6. We also include existence check examples where the correct count is 0.
+
+*Depth Order (3D).* We consider images with two distinct categories (i.e., object A and object B) and use visual prompts (e.g., bounding boxes with two different colors) to avoid ambiguity. We define "closer" as follows: object A is closer to the camera than object B only if the farthest vertex of object A is closer[‡‡](#page-20-1) to the camera than the nearest vertex of object B by a specified offset.
+
+*Relative Distance (3D).* We consider images with three distinct categories (i.e., anchor, object A, and object B), and use visual prompts (e.g., bounding boxes with three different colors) to avoid ambiguity. Object A is closer than object B only if the farthest distance from A's vertices is shorter than the shortest distance from B's vertices to the anchor object by a certain offset.
+
+Curation Procedure We provide an overview of the data curation process in Fig. [12,](#page-21-1) which is conducted in a semi-automatic manner. The procedure consists of two main steps:
+
+First, using the original benchmarks and their associated ground truth annotations, we generate query and answer pairs. These pairs are tailored to specific tasks: 2D-related tasks with COCO and ADE20K datasets, and 3D-related tasks with Omni3D.
+
+Second, after generating the query and answer pairs, we engage human experts to manually filter out any incorrect or ambiguous queries to enhance the quality of benchmark. Each query is assigned one of three statuses: accepted (used as is), modified (where the incorrect answer is modified), and rejected (queries that are ambiguous, such as those too small or difficult to discern, even for human experts).
+
+Following this two-stage process, we finalize the benchmark, which results in a total of 2638 image queries with improved accuracy and reliability. Subsequently, we will discuss the methods of human verification and the evaluation metrics used in this process.
+
+#### Human verification
+
+<span id="page-20-1"></span><sup>‡‡</sup>We use the Euclidean distance.
+
+<span id="page-21-1"></span>Figure 12: CV-CB Benchmark Filtering. We reformulate classic 2D and 3D CV benchmarks into Q&A questions to evaluate MLLM's visual capabilities.
+
+There are multiple reasons for the above generated data to be inaccurate. One of the main reasons is sparse annotations, but occasionally there could be wrong annotations as well.
+
+Thus, we need manual inspection to change/remove these examples generated. Here are a few criteria we followed while manually filtering COCO and ADE20k data.
+
+For Counting question types, if all instances of a category are not annotated, the ground truth would have lower count than the actual number of instances appearing in the image. In a few cases where the image distinctly has different countable instances of the object, we change the options/answer. In case the count is ambiguous, we reject the data sample altogether.
+
+For Relative Distance question types without annotation, if the question is asked about two objects A and B and if there are two instances of a specific category (say A), the relative location of A w.r.t B can be have multiple correct answers. We reject the sample in this case. We also reject cases with clear incorrect annotations.
+
+Benchmark Evaluation To ensure that equal importance is given to both 2D and 3D tasks, we use an evaluation metric that is the average of the accuracies obtained from these tasks. Specifically, the overall performance is calculated as follows:
+
+$$\mathrm{Accuracy}_{2D} = \left(\frac{\mathrm{Accuracy}_{COCO} + \mathrm{Accuracy}_{ADE20k}}{2}\right)$$
+
+$$\text{Overall Accuracy} = \left(\frac{\text{Accuracy}_{2D} + \text{Accuracy}_{3D}}{2}\right)$$
+
+## <span id="page-21-0"></span>F Vision Models in MLLMs
+
+As mentioned in Section [2.4,](#page-4-0) we use MLLM as an interface to evaluate vision model's different capabilities. Here, we list details in terms of the model selection, full results, and data split.
+
+### F.1 Details of Vision Models
+
+In our exploration of versatile vision models, we select thirteen models and group them into four categories: *language-supervised models* (i.e., OpenAI CLIP [\[109\]](#page-14-2), SigLIP [\[145\]](#page-15-0), DFN-CLIP [\[40\]](#page-12-25), EVA-CLIP [\[122\]](#page-15-28) and OpenCLIP [\[33\]](#page-12-26)), *self-supervised models* (i.e., DINOv2 [\[103\]](#page-14-3), I-JEPA [\[9\]](#page-11-23), MAE [\[52\]](#page-12-3), MoCo v3 [\[29\]](#page-11-25)), *class-supervised models* (ImagetNet22K ViT [\[39\]](#page-12-11)) and *other models* such as stable diffusion [\[112\]](#page-14-5)[,](#page-21-2) segmentation models like SAM [\[68\]](#page-13-3), and depth estimation models like MiDaS [\[15\]](#page-11-3). To provide a clear understanding of the specific variant evaluated, we meticulously detail their backbone architectures, resolution, number of tokens, and hidden dimension sizes in Table [6.](#page-22-0) For models that output a large number of patches in the last layer (e.g., SAM and ConvNeXt) we interpolate to the number of tokens specified in Table [6,](#page-22-0) and denote interpolation with <sup>I</sup> .
+
+<span id="page-21-2"></span>We extract features following the practice in [\[12\]](#page-11-26)
+
+<span id="page-22-0"></span>
+
+| Supervision         | Method              | Architecture | Patch | Res. | # Tok.   | Hidden |
+|---------------------|---------------------|--------------|-------|------|----------|--------|
+| Type                |                     |              | Size  |      |          | Size   |
+| Language-Supervised |                     |              |       |      |          |        |
+| Language            | OpenAI CLIP         | ViT-L        | 14    | 336  | 576      | 768    |
+|                     | DFN-CLIP            | ViT-L        | 14    | 224  | 256      | 1024   |
+|                     | DFN-CLIP            | ViT-H        | 14    | 378  | 729      | 1280   |
+|                     | EVA-CLIP-02         | ViT-L        | 14    | 336  | 576      | 1024   |
+|                     | SigLIP              | ViT-L        | 16    | 384  | 576      | 1024   |
+|                     | SigLIP              | ViT-SO400M   | 14    | 384  | 729      | 1152   |
+|                     | OpenCLIP            | ConvNeXT-L   | -     | 512  | I<br>576 | 1536   |
+|                     | OpenCLIP            | ConvNeXT-L   | -     | 1024 | I<br>576 | 1536   |
+|                     | OpenCLIP            | ConvNeXT-XXL | -     | 1024 | I<br>576 | 3072   |
+| Self-Supervised     |                     |              |       |      |          |        |
+| Contrastive         | DINOv2              | ViT-L        | 14    | 336  | 576      | 1024   |
+|                     | DINOv2              | ViT-L        | 14    | 518  | I<br>576 | 1024   |
+|                     | MoCo v3             | ViT-B        | 16    | 224  | 196      | 768    |
+|                     | MoCo v3             | ViT-L        | 16    | 224  | 196      | 1024   |
+| Masked              | MAE                 | ViT-L        | 16    | 224  | 196      | 1024   |
+|                     | MAE                 | ViT-H        | 14    | 224  | 256      | 1280   |
+| JEPA                | I-JEPA              | ViT-H        | 14    | 224  | 256      | 1280   |
+| Other               |                     |              |       |      |          |        |
+| Segmentation        | SAM                 | ViT-L        | 16    | 1024 | I<br>576 | 1024   |
+|                     | SAM                 | ViT-L        | 16    | 1024 | I<br>576 | 1280   |
+| Depth               | MiDaS 3.0           | ViT-L        | 16    | 384  | 576      | 1024   |
+|                     | MiDaS 3.1           | ViT-L        | 16    | 518  | 1024     | 1024   |
+| Diffusion           | Stable<br>Diffusion | VAE+UNet     | 16    | 512  | 1024     | 3520   |
+|                     | 2.1                 |              |       |      |          |        |
+| Class Labels        | SupViT              | ViT-L        | 16    | 224  | 196      | 1024   |
+|                     | SupViT              | ViT-H        | 14    | 224  | 256      | 1280   |
+
+Table 6: Catalog of all vision backbones tested. <sup>I</sup> denotes that the visual tokens have been interpolated down to the specified length.
+
+| Method      | Architecture | Patch Size | Resolution | # Tokens | Linear Probing (%) |
+|-------------|--------------|------------|------------|----------|--------------------|
+| EVA-CLIP-02 | ViT-L        | 14         | 336        | 576      | 85.0               |
+| DFN-CLIP    | ViT-L        | 14         | 224        | 256      | 83.6               |
+| DINOv2      | ViT-L        | 14         | 336        | 576      | 83.1               |
+| OpenCLIP    | ConvNeXt-L   | -          | 512        | 576      | 82.9               |
+| OpenAI CLIP | ViT-L        | 14         | 336        | 576      | 80.3               |
+| I-JEPA      | ViT-H        | 14         | 224        | 256      | 77.0               |
+| Supervised  | ViT-L        | 16         | 224        | 196      | 74.5               |
+| MoCo v3     | ViT-B        | 16         | 224        | 196      | 71.9               |
+| MiDaS       | ViT-L        | 16         | 384        | 576      | 70.1               |
+| MAE         | ViT-L        | 16         | 224        | 196      | 68.3               |
+
+Table 7: Linear Probing Results of Different Vision Backbones
+
+#### <span id="page-22-1"></span>F.2 Full Results of Different Vision Backbones
+
+Here, we also show a ranking version of Fig. [5.](#page-5-1) We observe a clear advantage of CLIP models over non-CLIP models. We also observe that within the family of CLIP models, each model perform differently in different domains. This provide insight into both vision model development and data curation in training large vision models.
+
+For the above-listed vision models in Table [6,](#page-22-0) they are integrated as the vision encoder of the MLLMs. These MLLMs are trained on various adapter adapter data splits (i.e., 0, 0.5 and 1.2 million), and subsequently fine-tuned on a 737K instruction tuning dataset provided in LLaVA-1.5[\[80\]](#page-13-8). For the adapter data splits, the 0M split indicates that no initial adapter pertaining phase is employed for the
+
+#### Language Supervised
+
+#### **Self-Supervised & Other**
+
+| Model    | Architecture        | All | G  | K  | O  | V  | Model     | Architecture    | All | G  | K  | O  | V  |
+|----------|---------------------|-----|----|----|----|----|-----------|-----------------|-----|----|----|----|----|
+| SigLIP   | ViT-SO400M/14@384   | 1   | 1  | 1  | 2  | 1  | DINOv2    | ViT-L/14@518    | 1   | 1  | 1  | 1  | 1  |
+| OpenCLI  | P ConvNeXt-XXL@1024 | 2   | 6  | 8  | 1  | 3  | DINOv2    | ViT-L/14@336    | 2   | 2  | 3  | 3  | 2  |
+| DFN-CLI  | P ViT-H/14@378      | 3   | 4  | 2  | 5  | 4  | MAE       | ViT-L/16@224    | 3   | 5  | 2  | 2  | 4  |
+| OpenCLI  | P ConvNeXt-L@1024   | 4   | 8  | 7  | 3  | 8  | I-JEPA    | ViT-H/14@224    | 4   | 3  | 6  | 8  | 3  |
+| SigLIP   | ViT-L/16@384        | 5   | 5  | 4  | 4  | 6  | SD2.1     | VAE+UNet/16@512 | 5   | 7  | 9  | 9  | 5  |
+| OpenAI C | CLIP ViT-L/14@336   | 6   | 3  | 6  | 6  | 7  | MiDaS 3.0 | ViT-L/16@384    | 6   | 6  | 8  | 5  | 6  |
+| EVA-CLI  | P-02 ViT-L/14@336   | 7   | 2  | 5  | 8  | 2  | SupViT    | ViT-L/16@224    | 7   | 4  | 9  | 4  | 8  |
+| OpenCLI  | P ConvNeXt-L@512    | 8   | 7  | 3  | 7  | 9  | MoCo v3   | ViT-B/16@224    | 8   | 8  | 4  | 7  | 7  |
+| DFN-CLI  | P ViT-L/14@224      | 9   | 9  | 9  | 9  | 10 | MoCo v3   | ViT-L/16@224    | 9   | 9  | 5  | 6  | 9  |
+| DINOv2*  | ViT-L/14@518        | 10  | 10 | 10 | 10 | 5  | SAM       | ViT-H/16@1024   | 10  | 10 | 10 | 10 | 10 |
+|          |                     |     |    |    |    |    |           |                 |     |    |    |    |    |
+
+Table 8: Benchmark performance rankings for MLLMs built upon language-supervised and self-supervised vision encoders across all benchmarks (All), and across general (G), knowledge (K), OCR & chart (O), and vision-centric (V) benchmark categories. Full results for all models on each benchmark are tabulated in Table 11. \*We add DINOv2 here to show its standing amongst the CLIP models.
+
+MLLM. The 0.5M data split utilizes the 558K adapter data from LLaVA-1.5[80], while the 1.2M variant uses ShareGPT4V-PT dataset [27].
+
+**0M** Adapter Data + 737K Instruction Tuning Data As shown in Table 9, we provide 20 results for different variants of the above-mentioned thirteen vision backbones. Among them, language-supervised models show superior performance. Especially, OpenCLIP ConvNeXT-XXL@1024 model surpasses all other models on DocVQA with over 12%, indicating its potential to handle OCR-related benchmarks.
+
+<span id="page-23-0"></span>
+
+| Vis                      | ion Backbone                 |         |           | Gene  | ral   |       |       | Know              | ledge                  |       | '       | OCR &    | char    | t      | '      | Vision-     | Centri                 | С                      |
+|--------------------------|------------------------------|---------|-----------|-------|-------|-------|-------|-------------------|------------------------|-------|---------|----------|---------|--------|--------|-------------|------------------------|------------------------|
+| Model                    | Architecture                 | Average | $MME^{P}$ | MMB   | SEED  | GQA   | SQA¹  | MMMU <sup>v</sup> | MathVista <sup>M</sup> | AI2D  | ChartQA | OCRBench | TextVQA | DocVQA | MMVP   | RealWorldQA | CV-Bench <sup>2D</sup> | CV-Bench <sup>3D</sup> |
+| Language Sup             | ervised                      |         |           |       |       |       |       |                   |                        |       |         |          |         |        |        |             |                        |                        |
+|                          | ViT-L/14@336                 |         | 1,419.43  |       |       |       |       |                   |                        |       |         |          |         |        |        |             |                        |                        |
+| DFN-CLIP                 | ViT-L/14@224                 |         | 1,172.50  |       |       |       |       |                   |                        |       |         |          |         |        |        | 46.97       |                        |                        |
+| DFN-CLIP                 | ViT-H/14@378                 |         | 1,091.76  |       |       |       |       |                   |                        |       |         |          |         |        |        | 47.06       |                        |                        |
+|                          | ViT-L/14@336                 |         | 1,325.17  |       |       |       |       |                   |                        |       |         |          |         |        |        |             |                        |                        |
+| SigLIP                   | ViT-L/16@384                 |         | 1,383.42  |       |       |       |       |                   |                        |       |         |          |         |        |        |             |                        |                        |
+| SigLIP                   | ViT-SO400M/14@384            |         | 1,376.75  |       |       |       |       |                   |                        |       |         |          |         |        |        |             |                        |                        |
+| OpenCLIP                 | ConvNeXt-L@512               |         | 1,404.01  |       |       |       |       |                   |                        |       |         |          |         |        |        |             |                        |                        |
+| OpenCLIP                 | ConvNeXt-L@1024              |         | 1,139.60  |       |       |       |       |                   |                        |       |         |          |         |        |        | 47.45       |                        |                        |
+| OpenCLIP                 | ConvNeXt-XXL@1024            | 41.83   | 1,219.47  | 48.00 | 49.88 | 35.09 | 66.14 | 35.69             | 27.60                  | 36.67 | 16.92   | 5.00     | 46.90   | 40.98  | 16.00  | 47.32       | 43.40                  | 32.73                  |
+| Self Supervise<br>DINOv2 | ViT-L/14@336                 | 141 19  | 1,262,66  | 10.62 | 56.80 | 60.20 | 65 10 | 25.00             | 26.40                  | 56.41 | 16.49   | 2 10     | 44.04   | 11.00  | 119 67 | 50.20       | 40.42                  | 52.25                  |
+| DINOv2                   | ViT-L/14@530<br>ViT-L/14@518 |         | 1,242.48  |       |       |       |       |                   |                        |       |         |          |         |        |        |             |                        |                        |
+| MoCo v3                  | ViT-B/16@224                 | 34.94   |           |       |       |       |       |                   |                        |       |         |          |         |        |        | 45.36       |                        |                        |
+| MoCo v3                  | ViT-L/16@224                 | 34.70   |           |       |       |       |       |                   |                        |       |         |          |         |        |        |             |                        | 35.16                  |
+| MAE                      | ViT-L/16@224                 |         | 1.114.07  |       |       |       |       |                   |                        |       |         |          |         |        |        |             |                        |                        |
+| MAE                      | ViT-H/14@224                 |         | 1,083.35  |       |       |       |       |                   |                        |       |         |          |         |        |        |             |                        |                        |
+| I-JEPA                   | ViT-H/14@224                 | 38.88   | 1.132.07  | 44.68 | 51.74 | 55.37 | 66.04 | 34.20             | 26.40                  | 56.09 | 15.84   | 3.00     | 43.66   | 11.48  | 10.67  | 46.01       | 46.74                  | 53.50                  |
+| Other                    |                              |         |           |       |       |       |       |                   |                        |       |         |          |         |        |        |             |                        |                        |
+| SAM                      | ViT-L/16@1024                | 31.74   | 585.78    | 20.34 | 36.34 | 39.85 | 65.49 | 34.50             | 25.10                  | 53.92 | 16.16   | 2.70     | 42.37   | 9.25   | 2.00   | 44.44       | 35.65                  | 50.50                  |
+| SAM                      | ViT-H/16@1024                | 32.37   | 648.96    | 22.30 | 36.31 | 40.52 | 65.20 | 34.10             | 26.00                  | 54.44 | 15.56   | 2.40     | 42.39   | 8.75   | 2.00   | 45.36       | 34.83                  | 55.25                  |
+| MiDaS 3.0                | ViT-L/16@384                 | 35.65   | 981.36    |       |       |       |       |                   |                        |       |         |          |         |        | 6.67   | 44.97       | 38.78                  | 53.40                  |
+| MiDaS 3.1                | ViT-L/16@518                 | 35.44   | 983.34    |       |       |       |       |                   |                        |       |         |          |         |        | 6.66   | 43.66       | 39.63                  | 52.58                  |
+| Diffusion                | SD2.1/16@512                 |         | 1,044.28  |       |       |       |       |                   |                        |       |         |          |         |        |        |             |                        | 52.40                  |
+| SupViT                   | ViT-L/16@224                 |         | 1,197.39  |       |       |       |       |                   |                        |       |         |          |         |        |        |             |                        |                        |
+| SupViT                   | ViT-H/14@224                 | 37.45   | 1,082.43  | 42.61 | 48.45 | 52.98 | 63.51 | 35.29             | 26.50                  | 55.78 | 15.16   | 3.30     | 44.16   | 11.49  | 4.66   | 43.79       | 44.55                  | 52.91                  |
+
+Table 9: All Benchmark Results for 0M Adapter Data + 737K Instruction Tuning Data
+
+**0.5M Adapter Data + 737K Instruction Finetune** As shown in Table 10 and Table 9, the inclusion of an alignment stage with 0.5M data split results in a notable increase in performance for DFN-CLIP ViT-H/14@378, from 36.21 to 49.94. This substantial improvement highlights the value of the alignment stage for enhancing certain vision backbones, suggesting its importance in harnessing the full potential of vision models.
+
+**1.2M Adapter Data + 737K Instruction Finetune** As we increase the amount of data in the alignment phase, we observe a consistent performance improvement for SigLIP ViT-SO400M/14@384
+
+<span id="page-24-2"></span>
+
+| Vis            | ion Backbone      |         |           | Gene  | ral   |       |                  | Know              | ledge                  |       | (       | OCR &    | Chart   |        | '     |             | Centri                 | с                      |
+|----------------|-------------------|---------|-----------|-------|-------|-------|------------------|-------------------|------------------------|-------|---------|----------|---------|--------|-------|-------------|------------------------|------------------------|
+| Model          | Architecture      | Average | $MME^{P}$ | MMB   | SEED  | GQA   | SQA <sup>I</sup> | MMMU <sup>v</sup> | MathVista <sup>M</sup> | AI2D  | ChartQA | OCRBench | TextVQA | DocVQA | MMVP  | RealWorldQA | CV-Bench <sup>2D</sup> | CV-Bench <sup>3D</sup> |
+| Language-Sup   | ervised           |         |           |       |       |       |                  |                   |                        |       |         |          |         |        |       |             |                        |                        |
+| OpenAI CLIP    | ViT-L/14@336      | 49.03   | 1,413.51  | 60.34 | 62.17 | 60.81 | 69.76            | 36.49             | 29.90                  | 58.48 | 36.80   | 30.20    | 57.63   | 30.98  | 21.33 | 51.63       | 52.57                  | 54.75                  |
+| DFN-CLIP       | ViT-L/14@224      |         | 1,382.75  |       |       |       |                  |                   |                        |       |         |          |         | 18.82  |       |             |                        |                        |
+| DFN-CLIP       | ViT-H/14@378      |         | 1,500.45  |       |       |       |                  |                   |                        |       |         |          |         |        |       |             |                        | 52.58                  |
+|                | ViT-L/14@336      |         | 1,362.07  |       |       |       |                  |                   |                        |       |         |          |         |        |       |             |                        | 58.16                  |
+| SigLIP         | ViT-L/16@384      |         | 1,381.48  |       |       |       |                  |                   |                        |       |         |          |         | 25.60  |       |             |                        |                        |
+| SigLIP         | ViT-SO400M/14@384 |         | 1,327.79  |       |       |       |                  |                   |                        |       |         |          |         |        |       |             |                        | 54.08                  |
+| OpenCLIP       | ConvNeXt-L@512    |         | 1,366.85  |       |       |       |                  |                   |                        |       |         |          |         | 29.48  |       |             |                        |                        |
+| OpenCLIP       | ConvNeXt-L@1024   |         | 1,084.62  |       |       |       |                  |                   |                        |       |         |          |         |        |       |             |                        | 41.58                  |
+| OpenCLIP       | ConvNeXt-XXL@1024 | 50.45   | 1,405.65  | 57.96 | 63.58 | 62.41 | 68.02            | 34.30             | 29.40                  | 59.62 | 42.96   | 26.20    | 61.82   | 42.67  | 28.67 | 55.16       | 49.92                  | 54.16                  |
+| Self-Supervise |                   |         |           |       |       |       |                  |                   |                        |       |         |          |         |        |       |             |                        |                        |
+| DINOv2         | ViT-L/14@336      |         | 1,283.95  |       |       |       |                  |                   |                        |       |         |          |         |        |       |             |                        |                        |
+| MoCo v3        | ViT-B/16@224      |         | 1,159.10  |       |       |       |                  |                   |                        |       |         |          |         |        |       |             |                        | 52.00                  |
+| MoCo v3        | ViT-L/16@224      |         | 1,074.13  |       |       |       |                  |                   |                        |       |         |          |         | 11.98  |       |             |                        | 45.59                  |
+| MAE            | ViT-L/16@224      |         | 1,138.35  |       |       |       |                  |                   |                        |       |         |          |         |        |       |             |                        |                        |
+| I-JEPA         | ViT-L/14@224      | 39.91   | 1,180.12  | 44.26 | 52.86 | 55.32 | 65.94            | 34.40             | 27.00                  | 57.16 | 15.88   | 3.20     | 44.36   | 11.61  | 13.33 | 46.27       | 52.19                  | 55.83                  |
+| Other          |                   |         |           |       |       |       |                  |                   |                        |       |         |          |         |        |       |             |                        |                        |
+| SAM            | ViT-H/16@1024     | 32.18   |           |       |       |       |                  |                   |                        |       |         |          |         |        |       |             |                        |                        |
+| MiDaS 3.0      | ViT-L/16@384      |         | 1,183.95  |       |       |       |                  |                   |                        |       |         |          |         |        |       |             |                        | 54.58                  |
+| Diffusion      | SD2.1/16@512      |         | 1,123.46  |       |       |       |                  |                   |                        |       |         |          |         |        |       |             |                        |                        |
+| SupViT         | ViT-L/16@224      | 39.66   | 1,186.88  | 48.43 | 54.28 | 56.35 | 65.49            | 33.00             | 28.10                  | 57.16 | 17.56   | 2.80     | 44.92   | 12.23  | 12.67 | 47.06       | 43.59                  | 51.67                  |
+
+Table 10: All Benchmark Results for 0.5M Adapter Data + 737K Instruction Tuning Data
+
+from 46.79 to 49.72 to 53.09 across 0M, 0.5M to 1.2M data splits as shown in Table 9, Table 10 and Table 11.
+
+<span id="page-24-1"></span>
+
+| Vis            | sion Backbone     |         |          | Gener | al    |       |                  | Knov  | vledge                 |       |         | OCR &    | c Chart | 1      | ,     |             | Centri                 | 2                      |
+|----------------|-------------------|---------|----------|-------|-------|-------|------------------|-------|------------------------|-------|---------|----------|---------|--------|-------|-------------|------------------------|------------------------|
+| Model          | Architecture      | Average | MME      | MMB   | SEEDI | GQA   | SQA <sup>I</sup> | MMMU  | MathVista <sup>M</sup> | AI2D  | ChartQA | OCRBench | TextVQA | DocVQA | MMVP  | RealWorldQA | CV-Bench <sup>2D</sup> | CV-Bench <sup>3D</sup> |
+| Language-Sur   |                   |         |          |       |       |       |                  |       |                        |       | _       |          |         |        |       |             |                        |                        |
+|                | ViT-L/14@336      | 50.49   | 1,476.65 | 61.96 | 65.45 | 62.78 | 69.06            | 35.00 | 29.50                  | 58.94 | 37.84   | 30.90    | 58.21   | 32.11  | 28.66 | 54.90       | 54.14                  | 54.60                  |
+| DFN-CLIP       | ViT-L/14@224      | 46.01   | 1,341.14 | 56.68 | 63.74 | 60.75 | 66.96            | 33.80 | 28.65                  | 57.04 | 23.32   | 23.20    | 52.85   | 18.97  | 26.67 | 51.44       | 52.91                  | 52.08                  |
+| DFN-CLIP       | ViT-H/14@378      | 51.17   | 1,426.32 | 62.38 | 67.29 | 62.89 | 69.01            | 35.89 | 30.00                  | 60.01 | 41.08   | 30.60    | 57.53   | 31.69  | 32.67 | 55.95       | 55.46                  | 55.00                  |
+| EVA-CLIP-02    | ViT-L/14@336      | 49.71   | 1,449.78 | 64.00 | 67.53 | 63.60 | 69.91            | 35.49 | 28.40                  | 59.16 | 24.76   | 27.10    | 55.39   | 21.63  | 34.67 | 55.69       | 57.83                  | 57.75                  |
+| SigLIP         | ViT-L/16@384      | 50.87   |          |       |       |       |                  |       |                        |       |         |          |         |        |       |             |                        |                        |
+| SigLIP         | ViT-SO400M/14@384 | 53.91   | 1,455.64 | 63.66 | 67.62 | 63.70 | 72.10            | 36.09 | 29.30                  | 61.59 | 43.76   | 37.20    | 61.82   | 40.19  | 36.60 | 56.99       | 59.61                  | 59.58                  |
+| OpenCLIP       | ConvNeXt-L@512    | 49.16   | 1,416.87 | 60.60 | 63.87 | 61.87 | 69.92            | 35.79 | 29.50                  | 59.36 | 34.40   | 28.00    | 58.36   | 28.41  | 27.33 | 51.90       | 54.64                  | 51.80                  |
+| OpenCLIP       | ConvNeXt-L@1024   | 51.00   |          |       |       |       |                  |       |                        |       |         |          |         |        |       |             |                        |                        |
+| OpenCLIP       | ConvNeXt-XXL@1024 | 52.18   | 1,402.94 | 59.40 | 65.21 | 62.73 | 68.27            | 33.10 | 29.30                  | 59.84 | 48.00   | 28.00    | 63.27   | 48.11  | 34.67 | 55.95       | 53.83                  | 55.08                  |
+| Self-Supervsie |                   |         |          |       |       |       |                  |       |                        |       |         |          |         |        |       |             |                        |                        |
+| DINOv2         | ViT-L/14@336      | 41.85   |          |       |       |       |                  |       |                        |       |         |          |         |        |       |             |                        |                        |
+| MoCo v3        | ViT-B/16@224      | 38.88   |          |       |       |       |                  |       |                        |       |         |          |         |        |       |             |                        |                        |
+| MoCo v3        | ViT-L/16@224      | 37.07   |          |       |       |       |                  |       |                        |       |         |          |         |        |       |             |                        |                        |
+| MAE            | ViT-L/16@224      | 40.39   | 1,132.80 |       |       |       |                  |       |                        |       |         |          |         |        |       |             |                        |                        |
+| I-JEPA         | ViT-H/14@224      | 40.27   | 1,207.88 | 45.79 | 54.51 | 56.15 | 65.29            | 34.40 | 27.10                  | 56.19 | 16.20   | 3.20     | 43.45   | 11.58  | 18.00 | 45.88       | 49.57                  | 56.58                  |
+| Other          |                   |         |          |       |       |       |                  |       |                        |       |         |          |         |        |       |             |                        |                        |
+| SAM            | ViT-H/16@1024     | 32.54   | 682.81   |       |       |       |                  |       |                        |       |         |          |         |        |       |             |                        | 52.90                  |
+| MiDaS 3.0      | ViT-L/16@384      | 39.15   | 1,132.18 |       |       |       |                  |       |                        |       |         |          |         | 11.66  |       |             |                        |                        |
+| Diffusion      | SD2.1/16@512      | 39.51   | 1,168.52 |       |       |       |                  |       |                        |       |         |          |         |        |       |             |                        |                        |
+| Supervised     | ViT-L/16@224      | 39.12   | 1,216.11 | 45.28 | 51.46 | 55.88 | 64.15            | 34.70 | 26.80                  | 55.76 | 16.80   | 2.80     | 44.42   | 11.61  | 11.33 | 47.97       | 44.62                  | 51.60                  |
+
+Table 11: All Benchmark Results for 1.2M Adapter Data + 737K Instruction Tuning Data
+
+**1.2M Adapter Data + 737K Instruction Finetune with** *Unfrozen* **Vision Model** Here, we present the results of different vision models trained with 1.2m adapter data and 737K instruction tuning data in Appendix F.2. Comparing to Appendix I.2, we observe nearly all the models see improvement on most of the benchmarks, especially on the OCR & Chart and Vision-Centric benchmarks.
+
+**1.2M Adapter Data + 5M Instruction Finetune** We present the results of 5M instruction tuning experiments in Fig. 6 here. In Table 12, we observe that after 5m instruction tuning, the gap between DINOv2 and CLIP models continue to bridge on general, knowledge and vision-centric benchmarks.
+
+#### <span id="page-24-0"></span>F.3 Model Ensemble
+
+**Model Ensemble Details** We introduce the implementation details of the model ensemble in Section 2.5. For a given image, the image passes through each vision encoder to obtain the features
+
+<span id="page-25-1"></span>
+
+| Visi        | on Backbone       |         |          | Gene  | ral   |       |       | Know              | ledge                  |       | '       | OCR &    | char    | t      | ,     | Vision-     | Centri                 | 2                      |
+|-------------|-------------------|---------|----------|-------|-------|-------|-------|-------------------|------------------------|-------|---------|----------|---------|--------|-------|-------------|------------------------|------------------------|
+| Model       | Architecture      | Average | MMEP     | MMB   | SEED  | GQA   | SQA¹  | MMMU <sup>v</sup> | MathVista <sup>M</sup> | AI2D  | ChartQA | OCRBench | TextVQA | DocVQA | MMVP  | RealWorldQA | CV-Bench <sup>2D</sup> | CV-Bench <sup>3D</sup> |
+| Other       |                   |         |          |       |       |       |       |                   |                        |       |         |          |         |        |       |             |                        |                        |
+| OpenAI CLIP | ViT-L/14@336      | 52.90   | 1,477.15 | 63.15 | 68.49 | 64.24 | 69.21 | 34.90             | 28.70                  | 61.24 | 47.68   | 40.20    | 58.92   | 35.22  | 26.00 | 58.82       | 59.65                  | 56.16                  |
+| DFN-CLIP    | ViT-L/14@224      | 45.80   | 1,364.91 | 55.15 | 63.06 | 59.94 | 67.28 | 35.59             | 29.80                  | 58.65 | 20.48   | 23.40    | 52.23   | 18.29  | 22.67 | 50.85       | 53.59                  | 53.50                  |
+| EVA-CLIP-02 | ViT-L/14@336      | 51.30   | 1,492.35 | 65.53 | 69.75 | 65.18 | 68.62 | 35.00             | 29.50                  | 60.78 | 29.32   | 29.90    | 56.87   | 21.59  | 44.67 | 58.95       | 54.66                  | 55.91                  |
+| SigLIP      | ViT-L/16@384      | 52.47   | 1,429.11 | 63.57 | 67.34 | 63.44 | 68.02 | 36.09             | 29.70                  | 61.56 | 46.68   | 35.70    | 59.86   | 35.93  | 32.67 | 55.29       | 55.24                  | 57.00                  |
+| SigLIP      | ViT-SO400M/14@384 | 55.27   | 1,489.05 | 66.55 | 69.59 | 64.58 | 70.45 | 35.69             | 29.20                  | 62.34 | 51.28   | 40.80    | 63.28   | 43.02  | 38.00 | 59.61       | 61.58                  | 53.91                  |
+| OpenCLIP    | ConvNeXt-L@512    | 52.76   | 1,467.38 | 63.40 | 66.92 | 63.17 | 69.16 | 34.90             | 29.70                  | 58.45 | 52.04   | 35.40    | 61.87   | 38.79  | 30.67 | 56.21       | 54.24                  | 55.91                  |
+| Other       |                   |         |          |       |       |       |       |                   |                        |       |         |          |         |        |       |             |                        |                        |
+| DINOv2      | ViT-L/14@336      | 43.26   | 1,261.43 | 53.96 | 63.22 | 62.61 | 65.49 | 34.50             | 27.70                  | 56.90 | 15.40   | 3.40     | 44.87   | 11.22  | 26.00 | 54.38       | 53.06                  | 56.40                  |
+| MoCo v3     | ViT-B/16@224      | 39.51   | 1,175.34 | 41.70 | 53.31 | 56.15 | 65.25 | 33.40             | 28.30                  | 55.76 | 15.48   | 3.20     | 44.42   | 11.10  | 18.00 | 46.67       | 45.38                  | 55.25                  |
+| MoCo v3     | ViT-L/16@224      | 37.59   | 1075.39  | 39.15 | 50.14 | 53.65 | 65.49 | 34.60             | 27.30                  | 55.44 | 17.28   | 3.00     | 44.21   | 11.70  | 14.67 | 44.58       | 45.38                  | 41.12                  |
+| MAE         | ViT-L/16@224      | 41.43   | 1,181.51 | 45.53 | 58.92 | 58.75 | 64.65 | 35.00             | 29.20                  | 57.12 | 16.88   | 3.10     | 44.67   | 11.74  | 18.67 | 49.67       | 53.04                  | 56.83                  |
+| I-JEPA      | ViT-H/14@224      | 41.90   | 1,175.70 | 48.00 | 59.60 | 59.35 | 64.45 | 35.09             | 27.60                  | 57.32 | 16.20   | 3.00     | 45.50   | 11.40  | 22.67 | 49.93       | 52.38                  | 59.08                  |
+| Other       |                   |         |          |       |       |       |       |                   |                        |       |         |          |         |        |       |             |                        |                        |
+| MiDaS 3.0   | ViT-L/16@384      | 38.28   | 1,065.26 | 42.64 | 50.95 | 56.10 | 65.39 | 35.00             | 27.20                  | 52.98 | 15.96   | 2.80     | 43.49   | 11.23  | 12.00 | 46.14       | 43.41                  | 53.90                  |
+| Supervised  | ViT-L/16@224      | 40.01   | 1,222.41 | 47.40 | 54.15 | 57.26 | 64.35 | 34.40             | 26.40                  | 56.09 | 16.20   | 3.20     | 44.73   | 11.74  | 14.00 | 46.41       | 49.33                  | 53.40                  |
+
+Table 12: All Benchmark Results for 1.2M Adapter Data + 737K Instruction Tuning Data with *Unfrozen* vision model.
+
+| Vision Backbone            |         |          | Gene  | ral   |       |       | Know              | ledge                   |       |         | OCR &    | c Chart |        | ١ ،   | Vision-     | Centri                 | с                      |
+|----------------------------|---------|----------|-------|-------|-------|-------|-------------------|-------------------------|-------|---------|----------|---------|--------|-------|-------------|------------------------|------------------------|
+| Method Backbone Unfre      | Average | MMEP     | MMB   | SEEDI | GQA   | SQA¹  | MMMU <sup>v</sup> | Math Vista <sup>M</sup> | AI2D  | ChartQA | OCRBench | TextVQA | DocVQA | MMVP  | RealWorldQA | CV-Bench <sup>2D</sup> | CV-Bench <sup>3D</sup> |
+| OpenAI CLIP ViT-L/14@336 × | 55.85   | 1,577.33 | 69.70 | 70.22 | 63.33 | 73.67 | 36.19             | 36.60                   | 64.80 | 49.12   | 36.90    | 60.33   | 39.79  | 32.67 | 55.56       | 66.11                  | 59.75                  |
+| DINOv2 ViT-L/14@336 ×      | 45.36   | 1,373.14 | 57.02 | 64.58 | 61.67 | 67.13 | 36.19             | 30.70                   | 60.62 | 19.04   | 3.40     | 46.39   | 13.27  | 26.67 | 52.68       | 59.81                  | 57.91                  |
+| OpenAI CLIP ViT-L/14@336 ✓ | 57.44   | 1,585.34 | 68.68 | 71.47 | 63.96 | 77.39 | 36.09             | 37.30                   | 65.12 | 59.36   | 48.00    | 62.39   | 45.24  | 31.33 | 56.21       | 61.09                  | 56.16                  |
+| DINOv2 ViT-L/14@336 ✓      | 47.40   | 1,366.65 | 61.62 | 69.72 | 63.68 | 68.72 | 36.29             | 35.50                   | 60.88 | 18.64   | 4.40     | 47.92   | 14.66  | 34.67 | 54.64       | 60.98                  | 57.83                  |
+
+Table 13: All Benchmark Results for 1.2M Adapter Data + 5M Instruction Tuning Data
+
+from the last layer. The shape of each model's output differs depending on the resolution and patch size of each vision model. To resolve these differences, we interpolate the output of each model to a fixed number of tokens, using 576 tokens in our implementation, as described in Section 2.5. Our example code for interpolation can be seen below.
+
+```
+# Example code for interpolation
+b, num_tokens, dim = image_features.shape\nif num_tokens! = self.image_token_len:
+    target_h = target_w = int(np.sqrt(self.image_token_len))
+    h = w = int(np.sqrt(num_tokens))
+    image_features = image_features.view(b, h, w, dim)
+    image_features = image_features.permute(0, 3, 1, 2).contiguous()
+    image_features = F.interpolate(image_features), size=(target_h, target_w), mode='bilinear', align_corners=False)
+    image_features = image_features.permute(0, 2, 3, 1).contiguous().flatten(1, 2)
+```
+
+We then concatenate the model outputs along the feature dimension and use a larger MLP to project the concatenated visual tokens into the LLM token space.
+
+**Full results on Model Ensemble** We present all the benchmarks from the model ensemble experiment in Section 2.5 in Table 14. As discussed in Section 1 and Section 2.4, this comprehensive view of benchmarks provides a better understanding of the model's performance compared to simply averaging across benchmarks. Adding a vision-only SSL model enhances the MLLM's performance in vision-centric benchmarks while maintaining strong capabilities in other categories.
+
+### <span id="page-25-0"></span>G Data
+
+#### G.1 Catalog of Visual Instruction Data
+
+Here, we provide a comprehensive catalog of visual instruction datasets utilized in our study. The datasets are categorized based on their primary focus, including general conversation and VQA data, OCR-related data, counting data, knowledge-based data, and language-only data. Table 15 summarizes these datasets and their respective references.
+
+<span id="page-26-2"></span>Figure 13: Percentage (%) Change in Benchmark Performance (Frozen → Unfrozen) Heatmap depicting the percentage change in performance across multiple benchmarks when visual encoders are unfrozen compared to when they are kept frozen during fine-tuning. The color gradient indicates the magnitude of the performance change after unfreezing visual encoders—white indicates no change, red is a positive change, and blue is a negative change. Notably, unfreezing leads to significant gains in OCR Chart tasks for most Language-Supervised Models, as reflected by the deep red cells. ConvNeXt, in particular, shows substantial improvements, demonstrating the benefits of
+
+<span id="page-26-1"></span>
+
+| Vision Backbone                                                                                                                      |         |                                                                                                          | General |           |     |          | Knowledge |                |      |         |          | OCR & Chart |        |      | Vision-Centric |            |            |
+|--------------------------------------------------------------------------------------------------------------------------------------|---------|----------------------------------------------------------------------------------------------------------|---------|-----------|-----|----------|-----------|----------------|------|---------|----------|-------------|--------|------|----------------|------------|------------|
+| Method                                                                                                                               | Average | P<br>MME                                                                                                 | MMB     | I<br>SEED | GQA | I<br>SQA | V<br>MMMU | M<br>MathVista | AI2D | ChartQA | OCRBench | TextVQA     | DocVQA | MMVP | RealWorldQA    | CV-Bench2D | CV-Bench3D |
+| SigLIP+DINOv2                                                                                                                        |         | 51.61 1,432.02 61.28 65.99 63.30 68.82 35.69 29.40 60.01 43.00 35.70 60.40 37.54 30.00 53.99 55.52 53.58 |         |           |     |          |           |                |      |         |          |             |        |      |                |            |            |
+| SigLIP+DINOv2+ConvNext                                                                                                               |         | 54.52 1,503.51 63.83 67.97 63.95 70.40 35.99 29.30 60.69 48.20 36.90 64.97 45.53 34.67 58.69 55.74 60.33 |         |           |     |          |           |                |      |         |          |             |        |      |                |            |            |
+| SigLIP+DINOv2+ConvNext+CLIP 54.74 1,479.46 63.32 67.63 64.04 71.39 35.49 29.10 59.88 50.24 39.60 64.55 46.12 32.67 58.95 58.54 60.42 |         |                                                                                                          |         |           |     |          |           |                |      |         |          |             |        |      |                |            |            |
+| SigLIP+ConvNext                                                                                                                      |         | 54.53 1,494.97 64.60 67.98 63.58 71.05 34.90 29.80 60.85 50.64 38.00 64.53 46.52 32.00 57.91 58.83 56.58 |         |           |     |          |           |                |      |         |          |             |        |      |                |            |            |
+| CLIP+ConvNext                                                                                                                        |         | 54.45 1,511.08 63.83 67.41 63.63 70.80 35.09 30.40 59.91 51.32 35.00 64.45 47.88 33.33 57.25 56.32 59.08 |         |           |     |          |           |                |      |         |          |             |        |      |                |            |            |
+| SigLIP+DINOv2+ConvNext-L                                                                                                             |         | 53.78 1,450.64 63.57 67.79 63.63 71.34 34.80 30.20 61.04 49.32 37.70 64.05 45.83 30.00 56.21 58.08 54.33 |         |           |     |          |           |                |      |         |          |             |        |      |                |            |            |
+| SigLIP+CLIP+ConvNext-L                                                                                                               |         | 54.53 1,507.28 63.23 68.64 63.63 71.10 35.89 30.90 59.97 52.36 38.50 65.40 47.92 28.67 57.25 57.66 55.92 |         |           |     |          |           |                |      |         |          |             |        |      |                |            |            |
+
+Table 14: All Benchmark Results for Model Ensemble with 1.2M Adapter Data + 737K Instruction Tuning Data. Here, "SigLIP" = ViT-SO400M/14@384, "DINOv2" = ViT-L/14@518, "ConvNext" = OpenCLIP ConvNeXt-XXL@1024, and "CLIP" = OpenAI CLIP ViT-L/14@336.
+
+#### <span id="page-26-0"></span>G.2 Additional System Prompts used in Cambrian Data
+
+updating this visual encoder during fine-tuning.
+
+Here, we investigate a phenomenon we term the "answer machine phenomenon". We observe that a well-trained MLLM may excel at VQA benchmarks, but lack basic conversational abilities and default to outputting short, curt responses (see examples in Fig. [14\)](#page-28-1). This discrepancy arises because benchmark questions typically require responses that are limited to a single option, choice, or word diverging from the more broad and realistic use cases of MLLMs. Similar phenomena have been discussed in other LLM studies [\[114,](#page-14-27) [151,](#page-16-6) [155\]](#page-16-10).
+
+<span id="page-27-1"></span>
+
+| Category                           | Datasets                                                                                                                                                                                                                                                                                                                                                            |
+|------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| General Conversation<br>& VQA Data | LVIS-Instruct4V [131], SketchyVQA [129], OODVQA [129], VizWiz [51],<br>ALLaVA [25], IDK [22], Q-Instruct [135], LAION GPT-4V [70], Hateful<br>Memes [66], Visual7W [159], Visualmrc [123], AlfWorld [117], LNQA [108],<br>LLaVA150K [82], ShareGPT [27], VQAv2 [50], GQA [57], OKVQA [95], A<br>OKVQA [116], RefCOCO [140], VisualGenome [69], GPT-4V recorded chat |
+| OCR Related Data                   | LLAVAR [149], ChartQA [96], DocVQA [97], DVQA [61], ArxivQA [76],<br>AI2D [65], ScreenQA [56], SynthDog [67], IconQA [89], WTQ [106],<br>WikiSQL [153], FinQA [31], HiTab [32], TAT-QA [158], TabMWP [88],<br>Chart2Text [62], VisText [124], InfoVQA [16], ST-VQA [17], Rendered<br>Text [134], OCRVQA [100], TextCaps [119], ShareGPTOCRData [27]                 |
+| Counting Data                      | TallyQA [1], CLEVR [59]                                                                                                                                                                                                                                                                                                                                             |
+| Knowledge-Based Data               | Code: Design2Code [118], WebSight [71], Datikz [14]<br>Math:<br>MathVision<br>[132],<br>Geo170K<br>[42],<br>TQA<br>[5],<br>Inter-GPS<br>[90],<br>RAVEN [148], GeomVerse [64]<br>Science: ScienceQA [91], PathVQA [53]                                                                                                                                               |
+| Language Only Data                 | Dolly [36], MathInstruct [142], WizardCoder [93], OrcaMath [99], OpenCodeIn<br>terpreter [152], OpenOrca [78]                                                                                                                                                                                                                                                       |
+
+Table 15: Visual Instruction-Tuning Data Catalog
+
+We suspect that this issue stems from instruction tuning data containing an excessive number of short-response VQA tasks, leading to catastrophic forgetting in LLMs. To address this, we incorporate additional system prompts during training. We append prompts such as "*Answer the question using a single word or phrase.*" before questions that generate a single word or phrase in the response. Full details of the system prompts used are provided in Appendix [G.2.](#page-26-0) After integrating these system prompts, we observe that while the model's benchmark performance remains unchanged, its conversational ability improves dramatically. For example, in Fig. [14,](#page-28-1) models with system prompts produce longer and more engaging responses while answering questions correctly. The system prompts also enhance the model's performance on reasoning-related tasks, such as math problems, by encouraging a chain of thoughts [\[133\]](#page-15-29) followed by the answer.
+
+This underscores the necessity of developing evaluation protocols like the Chatbot Arena [\[34\]](#page-12-27) for MLLMs, despite the challenges in collecting large-scale, real-world interaction data. While performing well on benchmarks is important, it is equally crucial to ensure the model can engage in meaningful and natural interactions. The overall user experience and the model's conversational abilities are paramount, as a model that excels in benchmarks but fails to converse effectively cannot meet the needs of practical applications.
+
+As our Cambrian data includes instructions/questions and responses of different types and formats (e.g., Short response with a single word or regular response as a complete sentence), it is important to specify the required response format in the instruction prompt to avoid ambiguity and possible conflicts. Some of the datasets already include such prompts and we add proper prompts for the remaining datasets. The detailed response formatting prompts we additionally add are listed in Table [16.](#page-29-0)
+
+#### <span id="page-27-0"></span>G.3 Data Engine
+
+#### Comprehensive Implementation Details of the Data Engine
+
+The data engine is designed to generate instruction tuning data for knowledge-based fields, where previous works rarely covers and MLLMs are not reliable to distill for from. The data engine takes in a given field, such as "Physics", utilizing reliable web sources like Wikipedia. Below are the various stages involved in the process. We also visualize this process in Fig. [15:](#page-28-0)
+
+Stage 1 - Topic Generation: We start by compiling a list of fields and subfields and subsequently generate topics for each field using a Large Language Model (LLM), such as GPT-4. In this stage,
+
+<span id="page-28-1"></span>Figure 14: Incorporating System Prompt in Instruction Tuning Data alleviates the "Answer Machine Phenomenon" By adding system prompts in Cambrian-7M, the model exhibits better chat ability while retaining strong question answering abilities. The model without system prompts requires additional prompting to elicit longer responses.
+
+<span id="page-28-0"></span>Figure 15: **Targeted Internet Data Collection Engine.** We build a targeted internet data engine to collect high-quality and large-scale multimodal instruction tuning data for domains like knowledge.
+
+we processed 30 fields, resulting in 3660 topics. We then post-process the output of LLMs into json formats. For example, the topic data for Physics looks like below.
+
+```
+Physics
+     "Classical Mechanics": [
+          "Newton's Laws of Motion";
+          "Conservation of Energy",
+"Conservation of Momentum",
+          "Harmonic Motion"
+          "Rotational Dynamics
+          "Gravitation and Orbits",
+"Fluid Dynamics",
+          "Elasticity and Plasticity",
+          "Friction"
+          "Waves and Sound"
+          "Velocity and Acceleration",
+          "Angular Momentum",
+"Statics and Equilibrium",
+          "Kinematics of Particles"
+          "Dynamics of Systems of Particles",
+          "Collisions".
+          "Centripetal Force and Acceleration",
+          "Lagrangian and Hamiltonian Mechanics",
+"Chaos Theory",
+"Equations of Motion"
+     ],
+"Electromagnetism": [
+          "Coulomb's Law"
+          "Electric Field and Electric Potential".
+          "Gauss's Law",
+"Capacitance and Dielectrics",
+          "Current and Resistance"
+```
+
+<span id="page-29-0"></span>
+
+| Index        | Response formatting prompts                                                                                                    |
+|--------------|--------------------------------------------------------------------------------------------------------------------------------|
+| 1            | Answer the question using a single word or phrase.                                                                             |
+| 2            | Answer the question using a single number or phrase.                                                                           |
+| 3            | Answer with the option's letter from the given choices directly.                                                               |
+| 4            | Give the short answer directly.                                                                                                |
+| 5            | Answer the question using a single word or phrase.                                                                             |
+| 6            | When the provided information is insufficient, respond with <no answer="">.</no>                                               |
+| 7            | Directly provide the HTML code.                                                                                                |
+| 8            | First show your reasoning process and then give the final answer.                                                              |
+| 9            | When the provided information is insufficient, respond with 'Unanswerable'. Answer the question using a single word or phrase. |
+| 10           | Answer with the letter.                                                                                                        |
+| Dataset      | Prompts added                                                                                                                  |
+| SketchyVQA   | 1                                                                                                                              |
+| OODVQA       | 1                                                                                                                              |
+| VizWiz       | 9                                                                                                                              |
+| Q-Instruct   | 1,3                                                                                                                            |
+| ChartQA      |                                                                                                                                |
+| DocVQA       | 4                                                                                                                              |
+| DVQA         | 1                                                                                                                              |
+| AI2D         | 1                                                                                                                              |
+| ScreenQA     | 1,6                                                                                                                            |
+| CLEVR        |                                                                                                                                |
+| TallyQA      | 1                                                                                                                              |
+| PathVQA      | 1                                                                                                                              |
+| MathInstruct | 8                                                                                                                              |
+| Design2Code  | 7                                                                                                                              |
+| IconQA       | 1, 10                                                                                                                          |
+| HiTab        |                                                                                                                                |
+| WTQ          | 1                                                                                                                              |
+| WikiSQL      | 1                                                                                                                              |
+| Inter-GPS    | 10                                                                                                                             |
+| Visual7W     | 3                                                                                                                              |
+| TQA          | 10                                                                                                                             |
+| RAVEN        | 1                                                                                                                              |
+
+Table 16: Response formatting prompts for Cambrian Data
+
+```
+"Direct Current Circuits",
+
+"Magnetic Fields and Magnetic Forces",
+
+"Ampere's Law",
+
+"Faraday's Law of Induction",
+
+"Inductance",
+
+"Alternating Current Circuits",
+
+"Electromagnetic Waves",
+
+"Maxwell's Equations",
+
+"Electromagnetic Radiation",
+
+"Optics and Light",
+
+"Quantum Electrodynamics",
+
+"Special Theory of Relativity Implication",
+
+"Magnetostatics",
+
+"Electrostatics",
+
+"Bioelectromagnetism"
+],
+
+...
+```
+
+**Stage 2 - Filtering Web Data:** For each generated topic, we utilize search engine APIs to fetch relevant high-quality web pages. For each topic, we query for 10 relevant links. Thus, we get 36,600 webpages post this stage. Here is an example of the data retrieved for the topic "Electric Field and Electric Potential":
+
+```
+"Electric Field and Electric Potential": [
+"https://en.wikipedia.org/wiki/Electric_potential",
+"https://en.wikipedia.org/wiki/Electric_field",
+"https://en.wikipedia.org/wiki/Electric_potential_energy",
+```
+
+```
+"https://en.wikipedia.org/wiki/Voltage",
+    "https://en.wikipedia.org/wiki/Electricity",
+    "https://en.wikipedia.org/wiki/Electrostatics",
+    "https://en.wikipedia.org/wiki/Electric_dipole_moment",
+    "https://en.wikipedia.org/wiki/Magnetic_vector_potential",
+    "https://en.wikipedia.org/wiki/Electric-field_screening",
+    "https://en.wikipedia.org/wiki/Electric_flux"
+],
+```
+
+Stage 3 - Parsing: In this stage, we parse each web page to extract image-caption-text tuples. We aim to identify the blocks containing an image, the image's caption, and relevant textual content. Below is an example of the parsed data for the same topic, "Electric Field and Electric Potential":
+
+```
+{
+   "Electric Field and Electric Potential",
+     {
+       "section": "Electrostatics",
+       "text": "An electric potential at a point r in a static electric field E is given by the line integral where C is an
+arbitrary path from some fixed reference point to r; it is uniquely determined up to a constant... The generalization of
+electric potential to this case is described in the section Generalization to electrodynamics.",
+       "images": [
+         {
+           "url": https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/VFPt_plus_thumb_potential+contour.svg/
+142px-VFPt_plus_thumb_potential+contour.svg.png,
+           "caption": "Electric potential of separate positive and negative point charges shown as color range from magenta
+(+), through yellow (0), to cyan (-). Circular contours are equipotential lines. Electric field lines leave the positive
+charge and enter the negative charge."
+         },
+         {
+           "url": https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/VFPt_charges_plus_minus_potential+contour.svg/
+288px-VFPt_charges_plus_minus_potential+contour.svg.png,
+           "caption": "Electric potential in the vicinity of two opposite point charges."
+         }
+       ],
+       "link": https://en.wikipedia.org/wiki/Electric_potential,
+       "title": "Electric potential",
+       "field": "Physics",
+       "subfield": "Electromagnetism",
+       "topic": "Electric Field and Electric Potential"
+     },
+}
+```
+
+Stage 4 - Data Generation: We generate dataset in this stage, ensuring high quality. We first filter out data samples with *fewer than 50 words* in the text. Then, instead of downloading images directly from the links retrieved during web parsing, we download high-resolution images from the original sources. We then convert formats like SVG or GIF into a common standardized format, PNG.
+
+Question-Answer pairs are generated by using LLM such as GPT-3.5 from the image metadata, caption, and contextual text. These Q&A pairs and the image form our VQA dataset. We generated 165k data samples. Here is an example of the generated data:
+
+```
+{
+   "id": "96232.png",
+   "image_id": "450px-Magnetic_Vector_Potential_Circular_Toroid",
+   "image_url": "...",
+   "text": "...",
+   "caption": "Representing the Coulomb gauge magnetic vector potential A, magnetic
+flux density B, and current density J fields around a toroidal inductor of circular
+cross section. Thicker lines indicate field lines of higher average intensity.
+Circles in the cross section of the core represent the B-field coming out of the
+picture, plus signs represent B-field going into the picture. \u2207 \u22c5 A = 0
+```
+
+Figure 16: Dataset Image Id: 96232.png
+
+<span id="page-31-1"></span>
+
+|                    |       |          | Gene  | ral  |               |      | Know  | ledge |      | C    | CR & | Chai           | rt   | '    | Vision | -Centrio      | c                   |
+|--------------------|-------|----------|-------|------|---------------|------|-------|-------|------|------|------|----------------|------|------|--------|---------------|---------------------|
+|                    |       |          |       |      |               |      |       | ∑_    |      |      | h    |                |      |      | IQ.A   | <sup>2D</sup> | 130                 |
+|                    | age   | _        |       | _    |               |      | 20    | /ista |      | Ϋ́   | enc  | ÓΑ             | ÓΑ   |      | 'orlc  | nch           | Bench <sup>3D</sup> |
+|                    | erag  | <u>"</u> | MΒ    | E    | ξ             | ΑĪ   | ₹     | ath   | 12D  | art  | KB.  | χtΧ            | C.V. | M    | alW    | /-Ben         | /-Be                |
+| # of Data          | A.    | Ī        | $\Xi$ | SEE  | $\mathcal{G}$ | SC   | $\Xi$ | Ž     | ΑI   | ರ    | ŏ    | T <sub>e</sub> | ŏ    | Ξ    | Re     | Ú             | $\mathcal{C}$       |
+| $t = 150k \ 4015k$ | 53.74 | 1,512.3  | 67.0  | 68.3 | 61.2          | 73.4 | 35.1  | 34.3  | 62.4 | 44.6 | 39.1 | 58.5           | 38.5 | 30.0 | 55.2   | 61.98         | 54.7                |
+| t = 250k 5218k     | 54.31 | 1,475.9  | 67.3  | 69.2 | 61.6          | 73.4 | 35.9  | 34.5  | 62.4 | 46.5 | 36.9 | 59.2           | 38.6 | 32.0 | 56.6   | 63.68         | 57.5                |
+| t = 350k 5883k     | 54.27 | 1,461.9  | 66.2  | 68.9 | 61.6          | 73.8 | 36.4  | 32.8  | 62.5 | 46.8 | 38.3 | 59.3           | 39.3 | 31.3 | 54.9   | 62.68         | 60.4                |
+| t = 450k 6383k     | 54.15 | 1,534.1  | 67.6  | 66.3 | 61.9          | 72.9 | 35.1  | 36.9  | 63.8 | 45.8 | 38.6 | 58.4           | 39.4 | 28.0 | 53.6   | 64.60         | 56.8                |
+
+Table 17: All Benchmark Results for Data Balancing Experiments
+
+```
+has been assumed",
+    "section": "Depiction of the A-field",
+    "...",
+    "Question": "What do the thicker lines signify?",
+    "Answer": "The thicker lines in the image represent paths of higher average intensity in the magnetic vector potential A field. Shorter paths have higher intensity, ensuring that the path integral remains constant. These lines are drawn to visually convey the general behavior and intensity distribution of the A-field around the toroidal inductor"
+```
+
+This data engine is designed for scalability and efficiency and is capable of handling extensive data generation tasks using multithreading techniques.
+
+### <span id="page-31-0"></span>G.4 Full results on data curation experiment
+
+Data Balance via Fitlering t As discussed in Section 4.2, if left unfiltered, the data pool is dominated by noisy, unbalanced data sources such as CLEVR and DVQA, leading to pronounced exponential tails. However, as we apply different t values to filter data from each source, the exponential tails become less pronounced, resulting in a more balanced dataset. We also present all the results in Table 17. t value 250k has the highest average across all benchmarks; 250k and 350k also have the highest performance across many individual benchmarks.
+
+Here, we plot the cumulative sum of counts for entries sorted by counts from tail to head. From Fig. 17, we see this intermediate threshold prevents explosive heavy tail.
+
+**Data Ratio Studies** We present the full results of our data ratio study in Table 18. The table highlights the importance of finding an optimal data ratio that balances different aspects of MLLM. Experiment 5 achieves well-rounded performance with its selected data ratio.
+
+<span id="page-32-1"></span>Figure 17: Data Balancing via Applying Thresholds on Data Sources. Applying threshold t alleviates the exponential tail of Cambrian-10M.
+
+<span id="page-32-2"></span>
+
+|      |         |           | Gene  | ral   |       |                  | Know              | ledge                  |       | '       | OCR &    | c Char  |        | 1     | Vision-     | Centri                 | Э                      |
+|------|---------|-----------|-------|-------|-------|------------------|-------------------|------------------------|-------|---------|----------|---------|--------|-------|-------------|------------------------|------------------------|
+|      | Average | $MME^{P}$ | MMB   | SEEDI | GQA   | SQA <sup>I</sup> | MMMU <sup>v</sup> | MathVista <sup>M</sup> | AI2D  | ChartQA | OCRBench | TextVQA | DocVQA | MMVP  | RealworldQA | CV-Bench <sup>2D</sup> | CV-Bench <sup>3D</sup> |
+| exp1 | 47.49   | 1,309.10  | 58.00 | 60.10 | 54.00 | 72.40            | 34.80             | 31.20                  | 59.10 | 34.20   | 34.50    | 54.20   | 33.00  | 13.30 | 47.60       | 57.40                  | 50.58                  |
+| exp2 | 47.78   | 1,351.70  | 60.30 | 61.20 | 55.40 | 72.80            | 35.20             | 29.50                  | 59.10 | 31.20   | 33.40    | 54.20   | 30.50  | 15.30 | 48.20       | 58.40                  | 52.25                  |
+|      |         | 1,299.53  |       |       |       |                  |                   |                        |       |         |          |         |        |       |             |                        |                        |
+|      |         | 1,288.98  |       |       |       |                  |                   |                        |       |         |          |         |        |       |             |                        |                        |
+| exp5 | 48.96   | 1,363.26  | 60.48 | 63.18 | 55.92 | 70.35            | 35.70             | 31.40                  | 57.19 | 32.88   | 34.60    | 54.74   | 32.10  | 22.70 | 47.30       | 58.83                  | 57.75                  |
+
+Table 18: All Benchmark Results for Data Ratio Experiments with fixed 1350k data
+
+#### <span id="page-32-0"></span>G.5 737K and 5M Mixes
+
+**0.7M** For the 0.7M data we used in Section 2.4, We add a small number of OCR and chart data to LLaVA 665K, specifically 15,501 AI2D, 14,999 DocVQA, and 13,000 DVQA data points. This results in a 737K mix, which covers all categories in training MLLMs. This data mix allows us to study visual representations efficiently.
+
+**5.0M** For the 5M data mixes we use in Section 2.4, we apply data filtering discussed in Section 4.2 and apply t=150k on all multimodal instruction data in Cambrian-10M.
+
+#### G.6 Test Image Leakage in Visual Instruction Training Data
+
+One potential concern with our targeted data engine (Section 4.1) is that instruction-tuning data collected from the open web could introduce data leakage. To address this, we systematically analyze the extent of direct image matches between our training data and our test sets. Using difference hashing (dHash) [19], we compute hashes for all images in the training data and test sets. We then compare these hash sets to determine how many test images overlap with our training data, reporting the number of collisions in Table 19.
+
+Across all fifteen datasets, our targeted data engine finds only 32 test images in total, amounting to just 0.06% of the test data. This low overlap percentage dispels concerns that our data engine inadvertently targets specific test sets. When analyzing the full Cambrian10M dataset—which is 15x larger than LLaVA-665k—we observe only 6x more matching test images (7,244 compared to 1,034 in LLaVA-665k). This discrepancy suggests that Cambrian10M's scale does not inherently result in excessive overlap with test sets. Instead, any overlap likely arises from the natural reuse of training images across benchmark datasets rather than targeted duplication.
+
+<span id="page-33-0"></span>
+
+| Category       | Test Set    | # Images | Data Eng.  | Cambrian10M    | LLaVA-665k       |
+|----------------|-------------|----------|------------|----------------|------------------|
+| General        | MMEP        | 2,374    | 0 (0.00%)  | 332 (13.98%)   | 82<br>(3.45%)    |
+|                | MMB         | 4,377    | 7 (0.16%)  | 1,122 (25.63%) | 533 (12.18%)     |
+|                | SEEDI       | 17,990   | 6 (0.03%)  | 26<br>(0.14%)  | 0<br>(0.00%)     |
+|                | GQA         | 398      | 0 (0.00%)  | 1<br>(0.25%)   | 0<br>(0.00%)     |
+| Knowledge      | SQAI        | 2,017    | 0 (0.00%)  | 1,263 (62.62%) | 0<br>(0.00%)     |
+|                | MMMUV       | 900      | 1 (0.11%)  | 3<br>(0.33%)   | 0<br>(0.00%)     |
+|                | MathVistaM  | 1,000    | 2 (0.20%)  | 259 (25.90%)   | 15<br>(1.50%)    |
+|                | AI2D        | 3,088    | 0 (0.00%)  | 1,458 (47.22%) | 0<br>(0.00%)     |
+| OCR & Chart    | ChartQA     | 2,500    | 14 (0.56%) | 670 (26.80%)   | 0<br>(0.00%)     |
+|                | OCRBench    | 1,000    | 0 (0.00%)  | 177 (17.70%)   | 59<br>(5.90%)    |
+|                | TextVQA     | 5,000    | 2 (0.04%)  | 1,122 (22.44%) | 9<br>(0.18%)     |
+|                | DocVQA      | 5,188    | 0 (0.00%)  | 53<br>(1.02%)  | 0<br>(0.00%)     |
+| Vision-Centric | MMVP        | 300      | 0 (0.00%)  | 0<br>(0.00%)   | 0<br>(0.00%)     |
+|                | RealWorldQA | 765      | 0 (0.00%)  | 0<br>(0.00%)   | 0<br>(0.00%)     |
+|                | CV-Bench    | 2,638    | 0 (0.00%)  | 758 (28.73%)   | 336 (12.74%)     |
+| Total          |             | 49,535   | 32 (0.06%) | 7,244 (14.62%) | 1,034<br>(2.07%) |
+
+Table 19: Number of leaked test set *images*. Using image hashing, we assess the overlap of test images across three training datasets: *Cambrian10M Data Engine 161k subset ("Data Eng.")*, *Cambrian10M*, and *LLaVA-665k*. We list the number of images in each test set, as well as the number of matching images and percentage of overlap for each training set in blue. Our Data Engine finds a neglible 0.06% of test images, dispelling any concerns that it is targeting the test sets. The full Cambrian10M training set contains 7,244 test set images, whereas LLaVA-665k contains 1,034. Despite being a 15x larger dataset, Cambrian10M only has 6x more overlapping images. Such overlap is inevitable since many test sets use validation images from standard benchmarks (like COCO). It is worth highlighting: although exact image matches are found, this does not mean that exact image-question pairs have been found. Unlike in prior *unimodal* paradigms of computer vision research, in the *multimodal* setting, a single data point is composed of an image-text (question) pair, not just the image itself. Thus, seeing a test image during training is not equivalent to "training on the test set" so long as the training image does not have the same text pair as the test data point.
+
+It is important to emphasize that while some exact image matches are found, this does not imply that the exact image-question pairs have been encountered during training. Unlike in traditional unimodal computer vision research, where an image alone constitutes a data point, the multimodal paradigm treats each image-text (question-answer) pair as unique. Consequently, seeing a test image during training is not equivalent to "training on the test set" as long as the associated text (question-answer) pairs differ. This distinction ensures that Cambrian10M respects the integrity of test evaluations, even in cases where images might appear in both training and test sets.
+
+We encourage future research exploring the impact of image-only leakage on the performance of MLLMs. Understanding this influence may yield insights into the boundaries of model generalization and guide future best practices for dataset construction in multimodal learning.
+
+#### G.7 Broader Impacts
+
+We conducted a preliminary analysis of the Cambrian dataset, focusing on the distribution of male, female, and neutral pronouns. Our findings show the following distribution: 38.35% male pronouns, 17.99% female pronouns, and 43.66% neutral pronouns.
+
+We recognize that training models on biased data can perpetuate these biases. Addressing bias by artificially modifying data distributions—such as through rebalancing or applying fairness constraints—can help mitigate this issue, but it also presents challenges. These include the potential loss of generalization and the risk of introducing new biases. Additionally, identifying and mitigating bias in Multimodal Large Language Models (MLLMs) is particularly complex, given the interaction
+
+between different data modalities. We believe that openness in model development and data curation will accelerate research aimed at understanding and mitigating these potential harms.
+
+### <span id="page-34-0"></span>H Implementation Details
+
+Cambrian Models For our final Cambrian models, we use 2.5M adapter data which is comprised of 1.2M captioning data from shareGPT4V [\[27\]](#page-11-5) and 1.2M captioning data used in MiniGemini [\[77\]](#page-13-7).
+
+SVA We provide here ablation studies of SVA module.
+
+| D | OCR & Chart  | G | OCR & Chart  | Multi-agg | OCR & Chart                 |
+|---|--------------|---|--------------|-----------|-----------------------------|
+| 2 | 52.1         | 1 | 52.4         | No        | 52.4                        |
+| 3 | 52.4         | 2 | 52.6         | Yes       | 53.3                        |
+| 4 | 52.8         | 3 | 53.1         |           |                             |
+|   | (a) # layers |   | (b) # groups |           | (c) Multi-layer aggregation |
+
+Table 20: Ablations on hyperparameter choices for SVA. Enlarging the model capacity of the SVA module can further improve the performance.
+
+We further conduct ablation experiments using OpenAI CLIP ViT-L/14@336 + OpenCLIP ConvNeXt-L@1024 as our base model combination. We focus on the OCR & chart categories to assess the impact on high-resolution visual understanding. The results show that increasing capacity via D or G improves performance and that allowing vision aggregation across multiple layers by adding cross-attention layers within the LLM also enhances performance.
+
+Compared with other spatial-based connectors like C/D-Abstractor [\[21\]](#page-11-28) which are designed for single vision feature maps, our SVA module can dynamically combine visual features from multiple vision models with varying resolutions. Besides, our spatial inductive bias in SVA can better compress spatial information compared with such methods. To isolate the effect of spatial inductive bias, we consider the case of token reduction using a single vision encoder. Specifically, we use OpenAI CLIP ViT-L as the vision model and compress its original 576 tokens to 36 tokens using our SVA module and other connectors. We compare our SVA module with three baselines: 1) Direct interpolation + MLP, 2) C-Abstractor [\[21\]](#page-11-28), and 3)LDPv2 Projector [\[35\]](#page-12-28) (similar to C-Abstractor but more lightweight). For fair comparisons, we do not include multi-layer aggregation inside the LLM for our SVA baseline, and the results are shown in Table [21.](#page-34-1) Compared with the simple MLP baseline, C-Abstractor performs better on General and Vision-Centric tasks but inferior on Knowledge and OCR & Chart tasks. LDPv2 performs similarly to the MLP baseline. Our SVA consistently demonstrates superior performance across all categories, especially in OCR & Chart and Vision-Centric tasks, demonstrating its effectiveness in information compression.
+
+<span id="page-34-1"></span>
+
+| Method            | General | Knowledge | OCR & Chart | Vision-Centric |
+|-------------------|---------|-----------|-------------|----------------|
+| Interpolate + MLP | 63.4    | 43.8      | 28.1        | 43.7           |
+| C-Abstractor [21] | 64.4    | 42.8      | 26.1        | 44.3           |
+| LDPv2 [35]        | 62.5    | 43.9      | 28.7        | 43.9           |
+| SVA               | 65.5    | 44.5      | 31.4        | 46.9           |
+
+Table 21: Comparison between SVA and other spatial-based connectors vision token compression. The SVA module with spatial inductive bias more effectively compresses the vision information.
+
+We introduce learnable k<sup>m</sup> × k<sup>m</sup> positional encodings in the vision features when k<sup>m</sup> > 1. Besides, during cross-attention, the query is augmented with a global feature obtained by global pooling over the vision features, which is concatenated with qi,j to better guide the aggregation process. In our experiments, the feature maps of all vision encoders except for ConvNext are interpolated to 576×576 (m<sup>k</sup> = 1 for L = 24). For ConvNext, we first interpolate the feature maps from its 4 stages to 96 × 96 (m<sup>k</sup> = 4 for L = 24) and then channel-wise concatenate them to form its final vision feature map similar to [\[77\]](#page-13-7).
+
+For experiments in Section [3,](#page-6-0) we set D = 3, G = 1 and add cross-attention layers between the layers of LLM with a stride equal to 3. For our final Cambrian models, we set D = 3, G = 1 and insert multiple cross-attention layers in LLM considering the tradeoff between performance and efficiency. For Cambrian-8B, Cambrian-13B, and Cambrian-34B, the strides of cross-attention layers inside the LLM are 3, 4, and 9 respectively.
+
+To study the importance of visual features from different vision models to different image categories, we further investigate the attention score distribution in our SVA module. We evaluate our Cambrian-8b model on GQA, DocVQA, and ScienceQA (representing three different benchmark categories), and the attention distribution results are shown in Table [22.](#page-35-0) We can see that on real-world images (GQA), the contribution of different vision models is relatively uniform, in part due to the similar characteristics of SigLIP and CLIP. On document-type images (DocVQA) which are text-heavy and often high-resolution, the influence of SigLIP increases and that of ConvNext greatly increases to aid in high-resolution information processing. For scientific images (ScienceQA) composed of illustrations and diagrams about different science categories, the contribution of SigLIP is further increased while the portion of DINOv2 decreases compared to GQA.
+
+| Model    | GQA   | DocVQA | ScienceQA |
+|----------|-------|--------|-----------|
+| SigLIP   | 29.7% | 31.1%  | 35.2%     |
+| CLIP     | 18.5% | 13.4%  | 16.3%     |
+| DINOV2   | 24.1% | 11.0%  | 17.6%     |
+| ConvNext | 27.7% | 44.5%  | 30.9%     |
+
+<span id="page-35-0"></span>Table 22: Attention distribution studies. The attention distribution among different vision encoders varies with different image categories.
+
+Unfreezing While unfreezing is largely beneficial (Section [2.3](#page-3-1) and Fig. [13\)](#page-26-2), it has a significant speed drawback. Given fixed computational resources, unfreezing visual encoders slows down the fine-tuning process by approximately 50–55%. For initial explorations or when computational overhead is a concern, leaving the visual encoders frozen can be a practical strategy. This allows for quicker iterations and tuning, especially during early research phases, while still providing valuable insights. Ultimately, unfreezing is recommended for achieving the best performance once the setup has been optimized.
+
+## I Evaluation Details
+
+#### I.1 System Prompts Used in Evaluation
+
+To ensure the reproduction of our results, we also include the system prompts we used in this work. The system prompts for our models can be found in Table [25.](#page-37-1) Additionally, we release the prompts we used while evaluating our models on the various benchmarks in Table [26.](#page-38-0) We hope this sets a precedent for future research to improve the reproducibility of benchmark results.
+
+#### I.2 Ablation Study on Fuzzy Matching Vs LLM Judgement
+
+We use fuzzy matching to evaluate responses in some benchmarks, since MLLMs can answer questions with auxillary phrases. To study the effectiveness of our fuzzy matching, we compare our model accuracy through fuzzy matching with the model accuracy obtained when we use LLM as a grader.
+
+The LLM grader is sensitive to the prompt given to it while grading, and we prompt the LLM (we use OpenAI GPT-3.5-turbo and GPT-4-turbo as our graders) with few shot grading examples, which we notice significantly improves grading accuracy. An example of such a prompt is given below.
+
+#### LLM Grader Prompt
+
+You are a reliable grader. Reply with only either of the following 2 words: CORRECT or INCORRECT.
+
+|                      |                 | Backbone                 | 1       | Data                   | A    | dapt | er  | In   | Tuning |      |           |
+|----------------------|-----------------|--------------------------|---------|------------------------|------|------|-----|------|--------|------|-----------|
+| Experiment           | LLM             | Vision                   | Adapter | Instruction Tuning     | lr   | wd   | bs  | lr   | wd     | bs   | vision lr |
+| 0M Adapter+737K IT   | Vicuna-1.5-7B   | OpenAI CLIP ViT-L/14@336 | 0       | 737k                   | -    | -    | -   | 2e-5 | 0      | 512  | -         |
+| 0.5M Adapter+737K IT | Vicuna-1.5-7B   | OpenAI CLIP ViT-L/14@336 | 0.5M    | 737k                   | 1e-3 | 0    | 512 | 2e-5 | 0      | 512  | -         |
+| 1.2M Adapter+737K IT | Vicuna-1.5-7B   | OpenAI CLIP ViT-L/14@336 | 1.2M    | 737k                   | 1e-3 | 0    | 512 | 2e-5 | 0      | 512  | -         |
+| Unfreeze Vision      | Vicuna-1.5-7B   | OpenAI CLIP ViT-L/14@336 | 1.2M    | 737k                   | 1e-3 | 0    | 512 | 2e-5 | 0      | 512  | 1e-5      |
+| Model Ensemble       | Vicuna-1.5-7B   | Chosen Combination       | 1.2M    | 737k                   | 1e-3 | 0    | 512 | 2e-5 | 0      | 512  |           |
+| Data Balance         | Vicuna-1.5-7B   | OpenAI CLIP ViT-L/14@336 | 0       | Mix Based on three $t$ | -    | -    | -   | 2e-5 | 0      | 512  | -         |
+| Data Ratio           | Vicuna-1.5-7B   | OpenAI CLIP ViT-L/14@336 | 0       | 1350k Based on Ratio   | -    | -    | -   | 2e-5 | 0      | 512  | -         |
+| LLaVA 665K           | Vicuna-1.5-7B   | OpenAI CLIP ViT-L/14@336 | 0       | LLaVA 665K             | -    | -    | -   | 2e-5 | 0      | 512  | -         |
+| Cambrian-10M (Data)  | Vicuna-1.5-7B   | OpenAI CLIP ViT-L/14@336 | 0       | Cambrian-10M           | -    | -    | -   | 2e-5 | 0      | 512  | -         |
+| Cambrian-7M (Data)   | Vicuna-1.5-7B   | OpenAI CLIP ViT-L/14@336 | 0       | Cambrian-7M            | -    | -    | -   | 2e-5 | 0      | 512  | -         |
+| Cambrian-1-8B        | Llama-3-Ins-8B  | SVA with 4 encoders*     | 2.5M    | Cambrian-7M            | 1e-4 | 0    | 512 | 2e-5 | 0      | 512  | -         |
+| Cambrian-1-13B       | Vicuna-1.5-13B  | SVA with 4 encoders*     | 2.5M    | Cambrian-7M            | 1e-4 | 0    | 512 | 2e-5 | 0      | 512  | -         |
+| Cambrian-1-34B       | Hermes-2-Yi-34B | SVA with 4 encoders*     | 2.5M    | Cambrian-7M            | 1e-4 | 0    | 512 | 2e-5 | 0      | 1024 | -         |
+|                      |                 |                          |         |                        | ,    |      |     |      |        |      |           |
+
+Table 23: Implementation details and hyperparameters for all experiments. \*4 encoders are: OpenAI CLIP ViT-L/14@336, SigLIP ViT-SO400M/14@384, DINOv2 ViT-L/14@518, Open-CLIP ConvNeXt-XXL@1024
+
+You will be given an 'answer' and a 'gt\_answer' (ground truth answer) ,and you must reply with either CORRECT or INCORRECT based on the response. Tolerate a 0.05 relative error for numerical answers.
+
+answer: 25 gt\_answer: 29
+
+evaluation: INCORRECT
+
+answer: Yes gt\_answer: Yes evaluation: CORRECT answer: 80
+
+gt\_answer: 80 evaluation: CORRECT answer: Ireland gt\_answer: Italy
+
+evaluation: INCORRECT
+
+answer: UK gt\_answer: UK
+
+evaluation: CORRECT answer: 2019
+
+gt\_answer: 2011 evaluation: INCORRECT answer: {answer}
+
+gt\_answer: {gt\_answer}
+
+evaluation:
+
+We conduct an ablation study on the benchmarks that require fuzzy matching and present the results in Table 24. We discover that fuzzy matching provides reliable results compared to an LLM grader. We recommend using a more capable model (such as GPT-4-turbo) for grading benchmarks that have more subjective responses (such as numbers and words).
+
+<span id="page-37-0"></span>
+
+| Method                                                                          | Eval                                                             | I<br>SEED | GQA | I<br>SQA | MMMU | AI2D                                              | ChartQA | OCRBench | TextVQA | MMVP | WorldQA<br>Real |
+|---------------------------------------------------------------------------------|------------------------------------------------------------------|-----------|-----|----------|------|---------------------------------------------------|---------|----------|---------|------|-----------------|
+| Cambrian-1 8B                                                                   | Fuzzy Matching                                                   |           |     |          |      | 74.7 64.6 80.4 42.7 73.0 73.3 62.4 71.7 51.3 64.2 |         |          |         |      |                 |
+| Cambrian-1 8B                                                                   | GPT3.5 Grading 78.4 65.8 82.0 38.9 78.1 71.2 67.0 69.2 49.3 63.5 |           |     |          |      |                                                   |         |          |         |      |                 |
+|                                                                                 | ∆                                                                |           |     |          |      | +3.7 +1.2 +1.6 -3.8 +5.1 -2.1 +4.6                |         |          | -2.5    | -2.0 | -0.7            |
+|                                                                                 | Cambrian-1 13B Fuzzy Matching                                    |           |     |          |      | 74.7 64.6 80.4 40.4 73.0 73.3 62.4 71.7 51.3 64.2 |         |          |         |      |                 |
+| Cambrian-1 13B GPT3.5 Grading 77.3 64.7 81.3 37.2 78.2 71.4 67.1 75.6 46.0 64.3 |                                                                  |           |     |          |      |                                                   |         |          |         |      |                 |
+| ∆                                                                               |                                                                  |           |     |          |      | +2.9 +0.4 +2.0 -3.2 +4.6 -2.4 +5.2 +2.8 +4.7 +1.3 |         |          |         |      |                 |
+
+Table 24: Comparison between Fuzzy Matching Accuracy and LLM Judged Accuracy. Fuzzy matching and LLM referee yield similar accuracies for the benchmarks that require matching.
+
+<span id="page-37-1"></span>
+
+| LLM           |                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+|---------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Backbone      | System Prompt                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Vicuna 1.5 7B | A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful,<br>detailed, and polite answers to the user's questions.                                                                                                                                                                                                                                                                               |
+| LLAMA-3 8B    | You are Cambrian, a highly intelligent multimodal AI trained by NYU Vision X. As a multimodal<br>AI, you have the ability to process and analyze images. Whenever an image is present in<br>the conversation, very carefully examine it and consider its content when formulating your<br>response.You should give concise responses to very simple questions, but provide thorough<br>responses to more complex and open-ended questions.  |
+| Nous-Yi 34B   | You are Cambrian, a highly intelligent multimodal AI trained by NYU Vision X. As a multimodal<br>AI, you have the ability to process and analyze images. Whenever an image is present in the<br>conversation, very carefully examine it and consider its content when formulating your response.<br>You should give concise responses to very simple questions, but provide thorough responses to<br>more complex and open-ended questions. |
+
+Table 25: LLM Backbone System Prompts
+
+Table 26: Listing the prompts used in the evaluation of each benchmark
+
+<span id="page-38-0"></span>
+
+| Benchmark       | Prompt                                                                               | Example                                                                                                                                                                                                                                                                                                           |
+|-----------------|--------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| AI2D            | \nAnswer<br>with<br>the<br>option's letter from<br>the given choices di<br>rectly.   | USER: <image/> \nwhich of these define dairy item\n(A) c\n(B)<br>D\n(C) b\n(D) a\nAnswer with the option's letter from the given<br>choices directly. ASSISTANT:                                                                                                                                                  |
+| ChartQA         | \nAnswer<br>the<br>ques<br>tion<br>using<br>a<br>single<br>number or phrase.         | USER: <image/> \nHow many food item is shown in the bar<br>graph?\nAnswer the question using a single number or phrase.<br>ASSISTANT:                                                                                                                                                                             |
+| DocVQA          | \nGive the short an<br>swer directly.                                                | USER: <image/> \nWhat is the dividend payout in 2012?\nGive<br>the short answer directly. ASSISTANT:                                                                                                                                                                                                              |
+| GQA             | \nAnswer<br>the<br>ques<br>tion<br>using<br>single<br>word or phrase.                | USER: <image/> \nIs it overcast?\nAnswer the question using<br>single word or phrase. ASSISTANT:                                                                                                                                                                                                                  |
+| MathVista       | \nFirst show your rea<br>soning<br>process<br>and<br>then give the final an<br>swer. | USER: <image/> \nwhat is the total volume of the measuring<br>cup?\nFirst show your reasoning process and then give the final<br>answer. ASSISTANT:                                                                                                                                                               |
+| MM-Bench<br>EN  | \nAnswer<br>with<br>the<br>option's letter from<br>the given choices di<br>rectly.   | USER: <image/> \nWhich of the following was a dependent<br>variable in this experiment?\n(A) cocoon\n(B) chrysalis\n(C)<br>nan\n(D) nan\nAnswer with the option's letter from the given<br>choices directly. ASSISTANT:                                                                                           |
+| MME             | \nPlease answer the<br>question using a sin<br>gle word or phrase.                   | USER: <image/> \nIs a python code shown in the picture? Please<br>answer yes or no.\nAnswer the question using a single word or<br>phrase. ASSISTANT:                                                                                                                                                             |
+| MMMU            | \nAnswer<br>with<br>the<br>option's letter from<br>the given choices di<br>rectly.   | USER: <image/> \nWhat causes these unusual formations on<br>Mountain papaya? Options:\nA. Abiotic\nB. Confused\nC. Bi<br>otic\nD. Normal\nAnswer with the option's letter from the given<br>choices directly. ASSISTANT:                                                                                          |
+| MMVP            | \nAnswer<br>with<br>the<br>option's letter from<br>the given choices di<br>rectly.   | USER: <image/> \nAre the butterfly's wings closer to being open<br>or closed? Options:\n(a) Open\n(b) Closed\nAnswer with the<br>option's letter from the given choices directly. ASSISTANT:                                                                                                                      |
+| OCR Bench       | \nGive the short an<br>swer directly.                                                | USER: <image/> \nwhat is written in the image?\nGive the short<br>answer directly. ASSISTANT:                                                                                                                                                                                                                     |
+| RealWorld<br>QA | \nAnswer<br>the<br>ques<br>tion<br>using<br>a<br>single<br>word or phrase.           | USER: <image/> \nIn which direction is the front wheel of<br>the car on the right side facing?\n\nA. Left\nB. Straight\nC.<br>Right\nAnswer the question using a single word or phrase. AS<br>SISTANT:                                                                                                            |
+| SQA-I           | \nAnswer<br>with<br>the<br>option's letter from<br>the given choices di<br>rectly.   | USER: <image/> \nWhat is the name of the colony shown?\nA.<br>Maryland\nB.<br>New<br>Hampshire\nC.<br>Rhode<br>Island\nD.<br>Ver<br>mont\nAnswer with the option's letter from the given choices<br>directly. ASSISTANT:                                                                                          |
+| SEED-I          | \nAnswer<br>with<br>the<br>option's letter from<br>the given choices di<br>rectly.   | USER: <image/> \nHow many towels are in the image?<br>Op<br>tions:\nA. One\nB. Two\nC. Three\nD. Four\nAnswer with the<br>option's letter from the given choices directly. ASSISTANT:                                                                                                                             |
+| Text-VQA        | \nAnswer<br>the<br>ques<br>tion<br>using<br>a<br>single<br>word or phrase.           | USER: <image/> \nwhat is the time?\nReference OCR tokens:<br>N, u, g0\nAnswer the question using a single word or phrase.<br>ASSISTANT:                                                                                                                                                                           |
+| ADE             | \nAnswer<br>with<br>the<br>option's letter from<br>the given choices di<br>rectly.   | USER: <image/> \nConsidering the relative positions of the cush<br>ion and the sofa in the image provided, where is the cushion lo<br>cated with respect to the sofa? Select from the following choices.<br>\n(A) right\n(B) left\nAnswer with the option's letter from the<br>given choices directly. ASSISTANT: |
+
+<span id="page-39-0"></span>Figure 18: Comparison of model average performances on each category. Cambrian-1 outperforms other open-source models across all sizes. The lead is especially large on OCR & Chart and Vision-Centric benchmarks, highlighting the advantage of our vision-centric design.
+
+| Benchmark | Prompt                  | Example                                                                |
+|-----------|-------------------------|------------------------------------------------------------------------|
+| COCO      | \nAnswer with the op    | USER: <image/> \nHow many trains are in the image? Select from the     |
+|           | tion's letter from the  | following choices. \n(A) 3\n(B) 0 \n(C) 1 \n(D) 2 \n(E) 4\nAnswer with |
+|           | given choices directly. | the option's letter from the given choices directly. ASSISTANT:        |
+| Omni3D    | \nAnswer<br>with<br>the | USER: <image/> \nEstimate the real-world distances between ob          |
+|           | option's letter from    | jects in this image. Which object is closer to the traffic cone        |
+|           | the given choices di    | (highlighted by a red box), the motorcycle (highlighted by a           |
+|           | rectly.                 | blue box) or the bus (highlighted by a green box)?\n(A) motor          |
+|           |                         | cycle\n(B) bus\nAnswer with the option's letter from the given         |
+|           |                         | choices directly. ASSISTANT:                                           |
+
+### J More results of Cambrian-1 Model
+
+In Fig. [18,](#page-39-0) we also plot our Cambrian-1 performance as well as GPT-4 performances. In the plot, it is clear that Cambrian-1 offers competitive performance compared to proprietary models in most categories. We also showcase some examples in Fig. [19,](#page-40-0) demonstrating that the model effectively attends to details in images despite using only 576 tokens.
+
+### K Potential Misuse & Mitigation Strategies
+
+We recognize that there are ethical concerns regarding the potential misuse of multimodal large language models like Cambrian-1, particularly in generating misleading content or spreading misinformation. Below, we outline the main risks and provide strategies to address them:
+
+- 1. Misinformation Cambrian-1 could be used to create misleading text descriptions of images, leading to false narratives or misrepresentations. For instance, such models might be leveraged by social media bots to manipulate public opinion during elections or other critical events.
+- 2. Hallucination Similar to any large language model, Cambrian-1 may produce information that is not based on facts or actual input data. This phenomenon, often called "hallucination," can be dangerous if users assume the model's output is entirely accurate without verification.
+
+To mitigate these risks, users should exercise caution and critical thinking when interpreting outputs generated by Cambrian-1. It is important to verify the information produced by the model, particularly if the results are intended for sensitive or high-stakes applications. Users must be aware of the potential for hallucinations, where the model produces information not grounded in facts, and take steps to cross-check and validate any critical outputs. Additionally, implementing content filtering as a safeguard can help flag potentially harmful or misleading content before it is disseminated.
+
+<span id="page-40-0"></span>Figure 19: Examples of Cambrian-1-34B. Cambrian-1 showcases impressive abilities in visual intersection. The model demonstrates instruction-following ability such as output in json format, as illustrated in the bottomleft example. Cambrian-1 also demonstrates remarkable OCR ability (See model handles different Comma "," in the right down example).
+
+## L Checklist
+
+#### 1. Claims
+
+Question: Do the main claims made in the abstract and introduction accurately reflect the paper's contributions and scope?
+
+Answer: [Yes]
+
+Justification: We have detailed all claims mentioned in the abstract and introduction in the remaining part of the paper and Appendix.
+
+#### Guidelines:
+
+- The answer NA means that the abstract and introduction do not include the claims made in the paper.
+- The abstract and/or introduction should clearly state the claims made, including the contributions made in the paper and important assumptions and limitations. A No or NA answer to this question will not be perceived well by the reviewers.
+- The claims made should match theoretical and experimental results, and reflect how much the results can be expected to generalize to other settings.
+- It is fine to include aspirational goals as motivation as long as it is clear that these goals are not attained by the paper.
+
+#### 2. Limitations
+
+Question: Does the paper discuss the limitations of the work performed by the authors?
+
+Answer: [NA]
+
+Justification: We have discussed the limitations of our work in the conclusion section.
+
+#### Guidelines:
+
+- The answer NA means that the paper has no limitation while the answer No means that the paper has limitations, but those are not discussed in the paper.
+- The authors are encouraged to create a separate "Limitations" section in their paper.
+- The paper should point out any strong assumptions and how robust the results are to violations of these assumptions (e.g., independence assumptions, noiseless settings, model well-specification, asymptotic approximations only holding locally). The authors should reflect on how these assumptions might be violated in practice and what the implications would be.
+- The authors should reflect on the scope of the claims made, e.g., if the approach was only tested on a few datasets or with a few runs. In general, empirical results often depend on implicit assumptions, which should be articulated.
+- The authors should reflect on the factors that influence the performance of the approach. For example, a facial recognition algorithm may perform poorly when image resolution is low or images are taken in low lighting. Or a speech-to-text system might not be used reliably to provide closed captions for online lectures because it fails to handle technical jargon.
+- The authors should discuss the computational efficiency of the proposed algorithms and how they scale with dataset size.
+- If applicable, the authors should discuss possible limitations of their approach to address problems of privacy and fairness.
+- While the authors might fear that complete honesty about limitations might be used by reviewers as grounds for rejection, a worse outcome might be that reviewers discover limitations that aren't acknowledged in the paper. The authors should use their best judgment and recognize that individual actions in favor of transparency play an important role in developing norms that preserve the integrity of the community. Reviewers will be specifically instructed to not penalize honesty concerning limitations.
+
+#### 3. Theory Assumptions and Proofs
+
+Question: For each theoretical result, does the paper provide the full set of assumptions and a complete (and correct) proof?
+
+Answer: [NA]
+
+Justification: We do not include any theoretical assumptions and proofs in our paper. Guidelines:
+
+- The answer NA means that the paper does not include theoretical results.
+- All the theorems, formulas, and proofs in the paper should be numbered and crossreferenced.
+- All assumptions should be clearly stated or referenced in the statement of any theorems.
+- The proofs can either appear in the main paper or the supplemental material, but if they appear in the supplemental material, the authors are encouraged to provide a short proof sketch to provide intuition.
+- Inversely, any informal proof provided in the core of the paper should be complemented by formal proofs provided in appendix or supplemental material.
+- Theorems and Lemmas that the proof relies upon should be properly referenced.
+
+#### 4. Experimental Result Reproducibility
+
+Question: Does the paper fully disclose all the information needed to reproduce the main experimental results of the paper to the extent that it affects the main claims and/or conclusions of the paper (regardless of whether the code and data are provided or not)?
+
+Answer: [Yes]
+
+Justification: We will publicly release all code, hyperparameters, model checkpoints, and datasets for reproducing our experimental results.
+
+### Guidelines:
+
+- The answer NA means that the paper does not include experiments.
+- If the paper includes experiments, a No answer to this question will not be perceived well by the reviewers: Making the paper reproducible is important, regardless of whether the code and data are provided or not.
+- If the contribution is a dataset and/or model, the authors should describe the steps taken to make their results reproducible or verifiable.
+- Depending on the contribution, reproducibility can be accomplished in various ways. For example, if the contribution is a novel architecture, describing the architecture fully might suffice, or if the contribution is a specific model and empirical evaluation, it may be necessary to either make it possible for others to replicate the model with the same dataset, or provide access to the model. In general. releasing code and data is often one good way to accomplish this, but reproducibility can also be provided via detailed instructions for how to replicate the results, access to a hosted model (e.g., in the case of a large language model), releasing of a model checkpoint, or other means that are appropriate to the research performed.
+- While NeurIPS does not require releasing code, the conference does require all submissions to provide some reasonable avenue for reproducibility, which may depend on the nature of the contribution. For example
+  - (a) If the contribution is primarily a new algorithm, the paper should make it clear how to reproduce that algorithm.
+- (b) If the contribution is primarily a new model architecture, the paper should describe the architecture clearly and fully.
+- (c) If the contribution is a new model (e.g., a large language model), then there should either be a way to access this model for reproducing the results or a way to reproduce the model (e.g., with an open-source dataset or instructions for how to construct the dataset).
+- (d) We recognize that reproducibility may be tricky in some cases, in which case authors are welcome to describe the particular way they provide for reproducibility. In the case of closed-source models, it may be that access to the model is limited in some way (e.g., to registered users), but it should be possible for other researchers to have some path to reproducing or verifying the results.
+
+#### 5. Open access to data and code
+
+Question: Does the paper provide open access to the data and code, with sufficient instructions to faithfully reproduce the main experimental results, as described in supplemental material?
+
+Answer: [Yes]
+
+Justification: Yes, as highlighted in the abstract, we will release our model weights, code, tools, dataset, and all recipes.
+
+#### Guidelines:
+
+- The answer NA means that paper does not include experiments requiring code.
+- Please see the NeurIPS code and data submission guidelines ([https://nips.cc/](https://nips.cc/public/guides/CodeSubmissionPolicy) [public/guides/CodeSubmissionPolicy](https://nips.cc/public/guides/CodeSubmissionPolicy)) for more details.
+- While we encourage the release of code and data, we understand that this might not be possible, so "No" is an acceptable answer. Papers cannot be rejected simply for not including code, unless this is central to the contribution (e.g., for a new open-source benchmark).
+- The instructions should contain the exact command and environment needed to run to reproduce the results. See the NeurIPS code and data submission guidelines ([https:](https://nips.cc/public/guides/CodeSubmissionPolicy) [//nips.cc/public/guides/CodeSubmissionPolicy](https://nips.cc/public/guides/CodeSubmissionPolicy)) for more details.
+- The authors should provide instructions on data access and preparation, including how to access the raw data, preprocessed data, intermediate data, and generated data, etc.
+- The authors should provide scripts to reproduce all experimental results for the new proposed method and baselines. If only a subset of experiments are reproducible, they should state which ones are omitted from the script and why.
+- At submission time, to preserve anonymity, the authors should release anonymized versions (if applicable).
+- Providing as much information as possible in supplemental material (appended to the paper) is recommended, but including URLs to data and code is permitted.
+
+#### 6. Experimental Setting/Details
+
+Question: Does the paper specify all the training and test details (e.g., data splits, hyperparameters, how they were chosen, type of optimizer, etc.) necessary to understand the results?
+
+Answer: [Yes]
+
+Justification: Yes. We include all training and evaluation recipes in the main paper and Appendix, and will additionally include them in the code release.
+
+#### Guidelines:
+
+- The answer NA means that the paper does not include experiments.
+- The experimental setting should be presented in the core of the paper to a level of detail that is necessary to appreciate the results and make sense of them.
+- The full details can be provided either with the code, in appendix, or as supplemental material.
+
+### 7. Experiment Statistical Significance
+
+Question: Does the paper report error bars suitably and correctly defined or other appropriate information about the statistical significance of the experiments?
+
+Answer: [Yes]
+
+Justification: We do report error bars and other statistical results for our experiments. Part of these results are included in Fig. [3,](#page-3-2) Fig. [4](#page-4-1) and Fig. [6.](#page-5-2)
+
+#### Guidelines:
+
+- The answer NA means that the paper does not include experiments.
+- The authors should answer "Yes" if the results are accompanied by error bars, confidence intervals, or statistical significance tests, at least for the experiments that support the main claims of the paper.
+- The factors of variability that the error bars are capturing should be clearly stated (for example, train/test split, initialization, random drawing of some parameter, or overall run with given experimental conditions).
+- The method for calculating the error bars should be explained (closed form formula, call to a library function, bootstrap, etc.)
+
+- The assumptions made should be given (e.g., Normally distributed errors).
+- It should be clear whether the error bar is the standard deviation or the standard error of the mean.
+- It is OK to report 1-sigma error bars, but one should state it. The authors should preferably report a 2-sigma error bar than state that they have a 96% CI, if the hypothesis of Normality of errors is not verified.
+- For asymmetric distributions, the authors should be careful not to show in tables or figures symmetric error bars that would yield results that are out of range (e.g. negative error rates).
+- If error bars are reported in tables or plots, The authors should explain in the text how they were calculated and reference the corresponding figures or tables in the text.
+
+### 8. Experiments Compute Resources
+
+Question: For each experiment, does the paper provide sufficient information on the computer resources (type of compute workers, memory, time of execution) needed to reproduce the experiments?
+
+Answer: [No]
+
+Justification: We will include these in our code release.
+
+#### Guidelines:
+
+- The answer NA means that the paper does not include experiments.
+- The paper should indicate the type of compute workers CPU or GPU, internal cluster, or cloud provider, including relevant memory and storage.
+- The paper should provide the amount of compute required for each of the individual experimental runs as well as estimate the total compute.
+- The paper should disclose whether the full research project required more compute than the experiments reported in the paper (e.g., preliminary or failed experiments that didn't make it into the paper).
+
+#### 9. Code Of Ethics
+
+Question: Does the research conducted in the paper conform, in every respect, with the NeurIPS Code of Ethics <https://neurips.cc/public/EthicsGuidelines>?
+
+Answer: [Yes]
+
+Justification: Our research conform NeurIPS Code of Ethics.
+
+#### Guidelines:
+
+- The answer NA means that the authors have not reviewed the NeurIPS Code of Ethics.
+- If the authors answer No, they should explain the special circumstances that require a deviation from the Code of Ethics.
+- The authors should make sure to preserve anonymity (e.g., if there is a special consideration due to laws or regulations in their jurisdiction).
+
+#### 10. Broader Impacts
+
+Question: Does the paper discuss both potential positive societal impacts and negative societal impacts of the work performed?
+
+Answer: [NA]
+
+Justification: Our work has no societal impact.
+
+#### Guidelines:
+
+- The answer NA means that there is no societal impact of the work performed.
+- If the authors answer NA or No, they should explain why their work has no societal impact or why the paper does not address societal impact.
+- Examples of negative societal impacts include potential malicious or unintended uses (e.g., disinformation, generating fake profiles, surveillance), fairness considerations (e.g., deployment of technologies that could make decisions that unfairly impact specific groups), privacy considerations, and security considerations.
+
+- The conference expects that many papers will be foundational research and not tied to particular applications, let alone deployments. However, if there is a direct path to any negative applications, the authors should point it out. For example, it is legitimate to point out that an improvement in the quality of generative models could be used to generate deepfakes for disinformation. On the other hand, it is not needed to point out that a generic algorithm for optimizing neural networks could enable people to train models that generate Deepfakes faster.
+- The authors should consider possible harms that could arise when the technology is being used as intended and functioning correctly, harms that could arise when the technology is being used as intended but gives incorrect results, and harms following from (intentional or unintentional) misuse of the technology.
+- If there are negative societal impacts, the authors could also discuss possible mitigation strategies (e.g., gated release of models, providing defenses in addition to attacks, mechanisms for monitoring misuse, mechanisms to monitor how a system learns from feedback over time, improving the efficiency and accessibility of ML).
+
+#### 11. Safeguards
+
+Question: Does the paper describe safeguards that have been put in place for responsible release of data or models that have a high risk for misuse (e.g., pretrained language models, image generators, or scraped datasets)?
+
+Answer: [NA]
+
+Justification: We used pre-trained LLM, which already has safeguards. As for datasets, we have conducted filtering to avoid safety risks.
+
+#### Guidelines:
+
+- The answer NA means that the paper poses no such risks.
+- Released models that have a high risk for misuse or dual-use should be released with necessary safeguards to allow for controlled use of the model, for example by requiring that users adhere to usage guidelines or restrictions to access the model or implementing safety filters.
+- Datasets that have been scraped from the Internet could pose safety risks. The authors should describe how they avoided releasing unsafe images.
+- We recognize that providing effective safeguards is challenging, and many papers do not require this, but we encourage authors to take this into account and make a best faith effort.
+
+#### 12. Licenses for existing assets
+
+Question: Are the creators or original owners of assets (e.g., code, data, models), used in the paper, properly credited and are the license and terms of use explicitly mentioned and properly respected?
+
+Answer: [Yes]
+
+Justification: We have credited and mentioned the assets we used.
+
+### Guidelines:
+
+- The answer NA means that the paper does not use existing assets.
+- The authors should cite the original paper that produced the code package or dataset.
+- The authors should state which version of the asset is used and, if possible, include a URL.
+- The name of the license (e.g., CC-BY 4.0) should be included for each asset.
+- For scraped data from a particular source (e.g., website), the copyright and terms of service of that source should be provided.
+- If assets are released, the license, copyright information, and terms of use in the package should be provided. For popular datasets, <paperswithcode.com/datasets> has curated licenses for some datasets. Their licensing guide can help determine the license of a dataset.
+- For existing datasets that are re-packaged, both the original license and the license of the derived asset (if it has changed) should be provided.
+
+• If this information is not available online, the authors are encouraged to reach out to the asset's creators.
+
+#### 13. New Assets
+
+Question: Are new assets introduced in the paper well documented and is the documentation provided alongside the assets?
+
+Answer: [Yes]
+
+Justification: We have explained the data engine and new benchmark in our paper.
+
+#### Guidelines:
+
+- The answer NA means that the paper does not release new assets.
+- Researchers should communicate the details of the dataset/code/model as part of their submissions via structured templates. This includes details about training, license, limitations, etc.
+- The paper should discuss whether and how consent was obtained from people whose asset is used.
+- At submission time, remember to anonymize your assets (if applicable). You can either create an anonymized URL or include an anonymized zip file.
+
+### 14. Crowdsourcing and Research with Human Subjects
+
+Question: For crowdsourcing experiments and research with human subjects, does the paper include the full text of instructions given to participants and screenshots, if applicable, as well as details about compensation (if any)?
+
+Answer: [NA]
+
+Justification: Our paper does not involve crowdsourcing.
+
+### Guidelines:
+
+- The answer NA means that the paper does not involve crowdsourcing nor research with human subjects.
+- Including this information in the supplemental material is fine, but if the main contribution of the paper involves human subjects, then as much detail as possible should be included in the main paper.
+- According to the NeurIPS Code of Ethics, workers involved in data collection, curation, or other labor should be paid at least the minimum wage in the country of the data collector.
+
+#### 15. Institutional Review Board (IRB) Approvals or Equivalent for Research with Human Subjects
+
+Question: Does the paper describe potential risks incurred by study participants, whether such risks were disclosed to the subjects, and whether Institutional Review Board (IRB) approvals (or an equivalent approval/review based on the requirements of your country or institution) were obtained?
+
+Answer: [NA]
+
+Justification: Our paper does not involve crowdsourcing nor research with human subjects. Guidelines:
+
+- The answer NA means that the paper does not involve crowdsourcing nor research with human subjects.
+- Depending on the country in which research is conducted, IRB approval (or equivalent) may be required for any human subjects research. If you obtained IRB approval, you should clearly state this in the paper.
+- We recognize that the procedures for this may vary significantly between institutions and locations, and we expect authors to adhere to the NeurIPS Code of Ethics and the guidelines for their institution.
+- For initial submissions, do not include any information that would break anonymity (if applicable), such as the institution conducting the review.
