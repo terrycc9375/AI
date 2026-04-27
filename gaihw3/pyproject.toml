@@ -3,11 +3,16 @@ name = "gaihw3"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = "==3.12.*"
 dependencies = [
+    "faiss-cpu>=1.13.2",
     "marker-pdf>=1.10.2",
     "pandas>=3.0.2",
     "pathlib>=1.0.1",
+    "rank-bm25>=0.2.2",
+    "sentence-transformers>=5.4.1",
     "tqdm>=4.67.3",
     "unsloth>=2026.4.8",
 ]
+
+
