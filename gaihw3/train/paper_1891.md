@@ -1,1031 +1,6667 @@
-# <span id="page-0-0"></span>Decentralized Noncooperative Games with Coupled Decision-Dependent Distributions
-
-# Wenjing Yan Xuanyu Cao <sup>∗</sup>
-
-Department of Electronic and Computer Engineering The Hong Kong University of Science and Technology wj.yan@connect.ust.hk, eexcao@ust.hk
-
-# Abstract
-
-Distribution variations in machine learning, driven by the dynamic nature of deployment environments, significantly impact the performance of learning models. This paper explores endogenous distribution shifts in learning systems, where deployed models influence environments, which in turn alters the data distributions that the learning models rely on. This phenomenon is formulated by a decision-dependent distribution mapping within the recently introduced framework of performative prediction (PP) [\(Perdomo et al., 2020\)](#page-10-0). Our study investigates the performative effect in a decentralized noncooperative game, where players aim to minimize private cost functions while simultaneously managing coupled inequality constraints. In this context, we examine two equilibrium concepts for the studied game: performative stable equilibrium (PSE) and Nash equilibrium (NE), and establish sufficient conditions for their existence and uniqueness. Notably, we provide the first upper bound on the distance between the PSE and NE in the literature, which is challenging to evaluate due to the absence of strong convexity on the joint cost function. Furthermore, we develop a decentralized stochastic primal-dual algorithm for efficiently computing the PSE point. By rigorously bounding the performative effect, we prove that the proposed algorithm achieves sublinear convergence rates for both performative regret and constraint violations and maintains the same order of convergence rate as the case without performativity. Numerical experiments further confirm the effectiveness of our algorithm and theoretical results.
-
-# 1 Introduction
-
-Machine learning aims to generalize models trained on given datasets to make accurate predictions or decisions on new, unseen data [\(El Naqa and Murphy, 2015\)](#page-9-0). The effectiveness of those models depends on the alignment between the training datasets and deployment environments [\(Quinonero-Candela et al., 2008\)](#page-10-1). However, real-world environments are seldom static and often exhibit fluctuations that can severely degrade model performance [\(Zhou, 2022\)](#page-10-2). In particular, shifts in data-generating distributions, driven by the dynamic nature of real-world conditions, present significant challenges for model deployment.
-
-Distribution shifts in machine learning can occur exogenously or endogenously. Exogenous distribution shifts are driven by external factors beyond the control of the learning platforms, such as environmental changes [\(Chan et al., 2020\)](#page-9-1) or policy amendments [\(Wu et al., 2021\)](#page-10-3). In contrast, endogenous shifts arise from the system's inherent dynamics and interactions, where the deployed models affect environments, which in turn alters the data distributions that the learning models rely on [\(Dong et al., 2018\)](#page-9-2). For instance, an increase in commodity prices may decrease user interest, thereby impacting sales. The key distinction lies in the controllability of endogenous shifts, providing
-
-<sup>∗</sup>Corresponding Author.
-
-an opportunity for designers to either exploit these shifts for improved performance or mitigate unintended consequences [\(Dean et al., 2023\)](#page-9-3).
-
-While substantial efforts have been made to address exogenous distribution changes, such as covariate shift [\(Chan et al., 2020\)](#page-9-1), label shift [\(Wu et al., 2021\)](#page-10-3), and concept drift [\(Lu et al., 2018\)](#page-9-4), relatively little attention has been paid to the challenges posed by endogenous distribution shifts. Tackling these endogenous shifts is particularly challenging as data distributions are intrinsically linked to the decisions made by the learning model itself [\(Perdomo et al., 2020\)](#page-10-0). As a result, addressing endogenous shifts may require the explicit modeling of feedback loops, consideration of causal relationships, and the adaptation of models to dynamic environments.
-
-A notable advancement in this area is the recently proposed framework of "performative prediction (PP)" [\(Perdomo et al., 2020\)](#page-10-0), also referred to as "decision-dependent learning" [\(Drusvyatskiy and](#page-9-5) [Xiao, 2023\)](#page-9-5). This framework elegantly captures the dynamic interplay between decisions and data distributions through a decision-dependent mapping, denoted by D(θ) where θ represents the decision variable. By linking θ to the data distribution, this formulation bridges the gap between model deployment and parameter optimization. Following the seminal work of [\(Perdomo et al., 2020\)](#page-10-0), a growing body of research has emerged, focusing on stability and optimality analysis [\(Piliouras](#page-10-4) [and Yu, 2023;](#page-10-4) [Miller et al., 2021\)](#page-9-6), as well as algorithmic design for various settings, including reinforcement learning [\(Mandal et al., 2023\)](#page-9-7), online learning [\(Wood et al., 2021\)](#page-10-5), bandit problems [\(Jagadeesan et al., 2022\)](#page-9-8), and bilevel optimization [\(Lu, 2023\)](#page-9-9).
-
-This paper investigates endogenous distribution shifts in a decentralized noncooperative game, where players aim to minimize private cost functions while simultaneously managing coupled inequality constraints. To contextualize this setting, consider scenarios where strategic responses exhibit in learning environments and competitive interactions occur among players. For example, in autonomous vehicular networks, multiple vehicles compete to select their routes under constraints such as road capacities, traffic congestion, and travel costs. The route choices of each vehicle influence traffic patterns and consequently affect the travel times experienced by other vehicles [\(Mori et al., 2015\)](#page-10-6). Similarly, in finance, traders compete to maximize profits under constraints like market capacities and inventory levels. The trading strategies of these participants impact market volatility and the distribution of asset prices, creating a dynamic pricing landscape [\(Fattouh and Mahadeva, 2014\)](#page-9-10). These dynamics extend to other domains, such as electricity market competition [\(Moshari et al.,](#page-10-7) [2010\)](#page-10-7), ride-sharing platforms [\(Narang et al., 2023\)](#page-10-8), natural resource extraction [\(Cust and Poelhekke,](#page-9-11) [2015\)](#page-9-11), and online advertising auctions [\(Varian, 2009\)](#page-10-9).
-
-Despite its pervasiveness, this performative phenomenon has largely been overlooked in the studies of decentralized noncooperative games. This paper addresses the problem by formulating performativity using coupled decision-dependent distributions, following the PP framework of [\(Perdomo et al.,](#page-10-0) [2020\)](#page-10-0). However, the intricate interplay between decentralized players and endogenous distribution shifts presents challenging theoretical and algorithmic questions: *How do strategic responses in learning environments influence the game's equilibrium? How can players adapt their strategies effectively when confronted with coupled decision-dependent distributions? How can we design algorithms to exploit these dynamics for optimal decision-making?* These questions form the core of our investigation, guiding us toward more resilient, adaptive, and efficient learning outcomes in decentralized games, especially in environments characterized by continuously evolving data and decision-making processes. Our main contributions are summarized below:
-
-• We initially formulate the problem of decentralized noncooperative games with data performativity, where selfish players seek to minimize individual costs while managing coupled inequality constraints. Under this setting, we examine two equilibrium concepts: performative stable equilibrium (PSE) and Nash equilibrium (NE), and establish sufficient conditions for their existence and uniqueness. Compared to conventional games, this examination is more complicated due to the interplay between decision-making and distribution changes. Notably, we make a significant contribution by providing the first upper bound on the distance between the PSE and NE in the literature. Computing this distance in PP games is challenging due to the absence of strong convexity on the joint cost function, an essential property for determining the optimality gap of performative stable points in previous work. Instead, we characterize the distance by leveraging relations from strong duality and derive a result comparable to the findings of the prior work [\(Perdomo et al., 2020;](#page-10-0) [Lu, 2023\)](#page-9-9).
-
-• To compute the PSE point of the PP-game, we propose a decentralized stochastic primal-dual algorithm based on repeated risk minimization (RRM). The development and convergence analysis of this algorithm face two primary challenges. First, there is a complex interaction between decentralized competition and endogenous distribution shifts. Second, players only have partial observation, as they communicate solely with neighbors, despite their private cost functions being influenced by the strategies of all players. We evaluate the performance of our algorithm by two commonly used metrics: performative regret, which measures the suboptimality of the strategy sequence generated by RRM relative to the PSE point, and constraint violation. By rigorously bounding the performative effect, we prove that the proposed algorithm achieves sublinear convergence rates for both metrics. Furthermore, our results show that while the performative effect slows down convergence, it does not degrade the order of performative regret compared to the case without performativity (Lu et al., 2020).
-
-Finally, we conduct numerical experiments on a networked Cournot game and a ride-share market. The simulation results confirm the sublinear convergence of our algorithm. Furthermore, the results demonstrate that while greater performative strength leads to a wider gap between the PSE and NE, the discrepancy between these two equilibria remains marginal. This verifies both the effectiveness of the PSE solutions and the accuracy of our distance analysis between the PSE and NE.
-
-**Related Work:** Among the numerous existing studies, two closely related works (Narang et al., 2023) and (Wang et al., 2023) have considered performative behaviors in games. A key distinction in our work is that our model requires all players' collective strategies to adhere to the constraints of the learning system, whereas both (Narang et al., 2023) and (Wang et al., 2023) address unconstrained settings. This difference results in fundamentally distinct algorithmic designs and convergence analyses. Our approach employs a primal-dual technique and requires consensus, whereas their methods only rely on local stochastic gradient descent. Additionally, we consider a mathematically richer model compared to (Wang et al., 2023), whose framework is structured in a specific form involving local costs dependent solely on individual strategies and a regularizer quantifying similarity among neighboring strategies. Furthermore, our algorithm design accounts for practical constraints where players can only communicate with their immediate neighbors, while (Narang et al., 2023) assumes full accessibility to all players' strategies across the entire network. Importantly, our work makes a significant contribution by providing the first upper bound on the distance between the performative stable equilibrium (PSE) and Nash equilibrium (NE)—a gap not previously addressed. Other related works such as (Li et al., 2022) and (Piliouras and Yu, 2023), have studied performative prediction in decentralized multi-agent optimization. The former focuses on consensus-seeking agents, while the latter is restricted to location-scale families. Finally, (Yan and Cao, 2024b) considers the constrained performative prediction problem in a single-agent setting, whereas our paper addresses decentralized noncooperative games. A more comprehensive literature review is provided in Appendix A.
-
-#### 2 Problem Formulation
-
-Consider a decentralized noncooperative game with n players. Each player i selects a strategy (or, interchangeably, decision, action), denoted as  $\boldsymbol{\theta}_i$ , from its feasible set  $\Omega_i \subseteq \mathbb{R}^d$ . Let the collective decisions of all players be denoted as  $\boldsymbol{\theta} := \operatorname{col}(\boldsymbol{\theta}_1, \cdots, \boldsymbol{\theta}_n)$ , and the collective decisions of all players except player i be represented as  $\boldsymbol{\theta}_{-i} := \operatorname{col}(\boldsymbol{\theta}_1, \cdots, \boldsymbol{\theta}_{i-1}, \boldsymbol{\theta}_{i+1}, \cdots, \boldsymbol{\theta}_n)$ , for any  $i \in [n]$ , where [n] denotes the set of integers  $\{1, 2, \ldots, n\}$ . Each player i has a private cost function  $J_i(\boldsymbol{\xi}_i; \boldsymbol{\theta}_i, \boldsymbol{\theta}_{-i})$ , which depends on the random variable  $\boldsymbol{\xi}_i \in \boldsymbol{\Xi}_i$ , the player's private decision  $\boldsymbol{\theta}_i$ , and the decisions of all other players  $\boldsymbol{\theta}_{-i}$ . This paper considers a scenario where the underlying populations strategically respond to the players' decisions, causing shifts in data distributions. This interplay is modeled by a decision-dependent distribution mapping  $\boldsymbol{\xi}_i \sim \mathcal{D}_i(\boldsymbol{\theta}_i, \boldsymbol{\theta}_{-i})$  for all  $i \in [n]$ . The objective of each player i is to selfishly minimize its performative risk  $\mathbb{E}_{\boldsymbol{\xi}_i \sim \mathcal{D}_i(\boldsymbol{\theta}_i, \boldsymbol{\theta}_{-i})} J_i(\boldsymbol{\xi}_i; \boldsymbol{\theta}_i, \boldsymbol{\theta}_{-i})$  (abbreviated as  $\mathrm{PR}_i(\boldsymbol{\theta}_i, \boldsymbol{\theta}_{-i})$ ), subject to a coupled constriant  $\sum_{i=1}^n \boldsymbol{g}_i(\boldsymbol{\theta}_i) \preceq \mathbf{0}$ , i.e.,
-
-<span id="page-2-0"></span>
-$$\min_{\substack{\boldsymbol{\theta}_i \in \Omega_i \\ \boldsymbol{\theta}_i \in \boldsymbol{\Omega}_i}} \mathbb{E}_{\boldsymbol{\xi}_i \sim \mathcal{D}_i(\boldsymbol{\theta}_i, \boldsymbol{\theta}_{-i})} J_i(\boldsymbol{\xi}_i; \boldsymbol{\theta}_i, \boldsymbol{\theta}_{-i})$$
-subject to  $\boldsymbol{g}_i(\boldsymbol{\theta}_i) + \sum_{j \neq i} \boldsymbol{g}_j(\boldsymbol{\theta}_j) \leq \mathbf{0}$ . (1)
-
-Both  $J_i(\cdot)$  and  $g_i(\cdot)$  are only locally accessible to player i for all  $i \in [n]$ . In the game (1), each player solves its private optimization problem to determine the best strategy, given the current strategies
-
-of all the other players. An equilibrium of the game (1) corresponds to a set of strategies where no player can improve its performance by deviating unilaterally from its strategy.
-
-Denote by  $\boldsymbol{\xi} := \operatorname{col}(\boldsymbol{\xi}_1, \cdots, \boldsymbol{\xi}_n)$  the concatenation of the variables  $\boldsymbol{\xi}_i$  and by  $J(\boldsymbol{\xi}; \boldsymbol{\theta}) := \operatorname{col}(J_1(\boldsymbol{\xi}_1; \boldsymbol{\theta}), \cdots, J_n(\boldsymbol{\xi}_n; \boldsymbol{\theta}))$  the concatenation of the cost functions  $J_i(\cdot)$  for all  $i \in [n]$ . A stochastic pseudogradient mapping of  $J(\boldsymbol{\xi}; \boldsymbol{\theta})$  is defined as  $\nabla J(\boldsymbol{\xi}; \boldsymbol{\theta}) := \operatorname{col}(\nabla_{\boldsymbol{\theta}_1} J_1(\boldsymbol{\xi}_1; \boldsymbol{\theta}), \cdots, \nabla_{\boldsymbol{\theta}_n} J_n(\boldsymbol{\xi}_n; \boldsymbol{\theta}))$ . We have the following assumption on  $\nabla J(\boldsymbol{\xi}; \boldsymbol{\theta})$ .
-
-<span id="page-3-0"></span>**Assumption 2.1.** There exists a constant  $\mu > 0$  such that the stochastic gradient mapping  $\nabla J\left(\boldsymbol{\xi};\boldsymbol{\theta}\right)$  is  $\mu$ -strongly monotone, i.e.,  $\left\langle \nabla J\left(\boldsymbol{\xi};\boldsymbol{\theta}\right) - \nabla J\left(\boldsymbol{\xi};\boldsymbol{\theta}'\right), \boldsymbol{\theta} - \boldsymbol{\theta}'\right\rangle \geq \mu \|\boldsymbol{\theta} - \boldsymbol{\theta}'\|_2^2, \forall \boldsymbol{\xi} \in \Xi, \boldsymbol{\theta}, \boldsymbol{\theta}' \in \Omega,$  where  $\Xi := \Xi_1 \times \cdots \times \Xi_n$  and  $\Omega := \Omega_1 \times \cdots \times \Omega_n$ .
-
-Assumption 2.1 is commonly made in the literature of game theory. It suffices to guarantee the existence of Nash equilibrium for a stochastic game with fixed data distributions (Facchinei and Pang, 2003, Theorem 2.3.3(b)). However, in our paper, since the data distributions are decision-dependent, Assumption 2.1 does not imply the monotonicity of the gradient mapping of the joint performative risk, denoted by  $PR(\cdot) := col\left(PR_1(\cdot), \cdots, PR_n(\cdot)\right)$ . Therefore, the existence and uniqueness (E&U) conditions for the Nash equilibrium of the game (1) need further investigation.
-
-We define a graph  $\mathcal{G}(\mathbf{P})$  to represent the impact of players' decisions on the data distributions of different players. In  $\mathcal{G}(\mathbf{P})$ , the weight  $p_{ij} > 0$  if player j's decision affects player i's data distribution, and  $p_{ij} = 0$  otherwise. Particularly,  $p_{ii}$  represents the weight of self-influence. These weights are normalized as  $\sum_{j=1}^{n} p_{ij} = 1$ , for all  $i \in [n]$ . Clearly, the larger the weight  $p_{ij}$ , the stronger the effect of player j's decision on the data distribution of player i.
-
-Let  $W_1(\mathcal{D}, \mathcal{D}')$  represent the *Wasserstein-1* distance between two probability measures  $\mathcal{D}$  and  $\mathcal{D}'$ . Following (Wang et al., 2023), we impose the following assumption on the distributions  $\{\mathcal{D}_i\}_{i \in [n]}$ .
-
-<span id="page-3-4"></span>**Assumption 2.2.** For any  $i \in [n]$ , there exists a constant  $\varepsilon_i \geq 0$  such that,  $\forall \boldsymbol{\theta}, \boldsymbol{\theta}' \in \Omega$ , the distribution mapping  $\mathcal{D}_i$  is constrained by  $\mathcal{W}_1\left(\mathcal{D}_i\left(\boldsymbol{\theta}\right), \mathcal{D}_i\left(\boldsymbol{\theta}'\right)\right) \leq \varepsilon_i \sqrt{\sum_{j=1}^n p_{ij} \left\|\boldsymbol{\theta}_j - \boldsymbol{\theta}_j'\right\|_2^2}$ .
-
-For any  $i \in [n]$ , the parameter  $\varepsilon_i$  bounds the sensitivity of player i's distribution with respect to (w.r.t.) the decision variations of all players. This  $\varepsilon$ -sensitivity property of distributions is conceptually akin to the Lipschitz continuity of functions that quantifies the variation of function values w.r.t argument changes. We also require the following assumptions.
-
-<span id="page-3-1"></span>**Assumption 2.3.** For any  $i \in [n]$ , the non-empty feasible set  $\Omega_i$  is closed, convex, and bounded, i.e., there exists a constant  $C \geq 0$  such that,  $\forall \theta_i \in \Omega_i, \|\theta_i\|_2 \leq C$ .
-
-<span id="page-3-3"></span>**Assumption 2.4.** For any  $i \in [n]$  and  $\boldsymbol{\theta}_i \in \boldsymbol{\Omega}_i$ , the cost function  $J_i(\boldsymbol{\xi}_i; \boldsymbol{\theta}_i, \boldsymbol{\theta}_{-i})$  is convex w.r.t.  $\boldsymbol{\theta}_i$ . Moreover, there exists a constant  $L_i \geq 0$  such that  $J_i(\boldsymbol{\xi}_i; \boldsymbol{\theta})$  is  $L_i$ -smooth, i.e,  $\left\|\nabla J_i(\boldsymbol{\xi}_i; \boldsymbol{\theta}) - \nabla J_i(\boldsymbol{\xi}_i'; \boldsymbol{\theta}')\right\|_2 \leq L_i\left(\left\|\boldsymbol{\xi}_i - \boldsymbol{\xi}_i'\right\|_2 + \left\|\boldsymbol{\theta} - \boldsymbol{\theta}'\right\|_2\right), \forall \boldsymbol{\xi}_i, \boldsymbol{\xi}_i' \in \boldsymbol{\Xi}_i, \boldsymbol{\theta}, \boldsymbol{\theta}' \in \boldsymbol{\Omega}.$ 
-
-<span id="page-3-2"></span>**Assumption 2.5.** For any  $i \in [n]$  and  $\boldsymbol{\theta}_i \in \Omega_i$ , the constraint function  $\boldsymbol{g}_i(\boldsymbol{\theta}_i)$  is convex w.r.t.  $\boldsymbol{\theta}_i$ . Moreover, there exist a constant  $G_g \geq 0$  such that  $\boldsymbol{g}_i(\cdot)$  is  $G_g$ -Lipschitz, i.e.,  $\left\|\boldsymbol{g}_i(\boldsymbol{\theta}_i) - \boldsymbol{g}_i(\boldsymbol{\theta}_i')\right\|_2 \leq G_g \|\boldsymbol{\theta}_i - \boldsymbol{\theta}_i'\|_2, \forall \boldsymbol{\theta}_i, \boldsymbol{\theta}_i' \in \Omega_i$ .
-
-Assumptions 2.3 and 2.5 are widely used in constrained optimization (Bertsekas, 2014; Yan and Cao, 2024a), and Assumption 2.4 is standard in the PP literature. From Yan and Cao (2024a, Proposition 1), under Assumptions 2.3 and 2.4, the cost function  $J_i(\boldsymbol{\xi}_i;\boldsymbol{\theta}), \forall i \in [n]$  is Lipschitz continuous, i.e., there exist a constant  $G_i \geq 0$  such that  $|J_i(\boldsymbol{\xi}_i;\boldsymbol{\theta}) - J_i(\boldsymbol{\xi}_i';\boldsymbol{\theta}')| \leq G_i \left( \left\| \boldsymbol{\xi}_i - \boldsymbol{\xi}_i' \right\|_2 + \left\| \boldsymbol{\theta} - \boldsymbol{\theta}' \right\|_2 \right), \forall \boldsymbol{\xi}_i, \boldsymbol{\xi}_i' \in \Xi_i, \boldsymbol{\theta}, \boldsymbol{\theta}' \in \Omega$ . Moreover, Assumptions 2.3 and 2.5 imply the boundedness of  $\|\boldsymbol{g}_i(\boldsymbol{\theta}_i)\|_2$ , i.e., there exists a constant  $B \geq 0$  such that  $\|\boldsymbol{g}_i(\boldsymbol{\theta}_i)\|_2 \leq B, \forall \boldsymbol{\theta}_i \in \Omega_i, i \in [n]$ .
-
-#### 3 Equilibrium of the PP-Game
-
-This section examines two fundamental equilibrium concepts of the performative game (1): Nash equilibrium (NE) and performative stable equilibrium (PSE), as defined below.
-
-**Definition 3.1** (Nash Equilibrium). A vector  $\boldsymbol{\theta}^{\mathrm{ne}} := \mathrm{col}\left(\boldsymbol{\theta}_{1}^{\mathrm{ne}}, \ldots, \boldsymbol{\theta}_{n}^{\mathrm{ne}}\right)$  achieves an NE of the game (1) if it holds for any  $i \in [n]$  that
-
-$$\begin{split} \boldsymbol{\theta}_{i}^{\text{ne}} &\in \operatorname*{arg\,min}_{\boldsymbol{\theta}_{i} \in \boldsymbol{\Omega}_{i}} \quad \mathbb{E}_{\boldsymbol{\xi}_{i} \sim \mathcal{D}_{i}\left(\boldsymbol{\theta}_{i}, \boldsymbol{\theta}_{-i}^{\text{ne}}\right)} J_{i}\left(\boldsymbol{\xi}_{i}; \boldsymbol{\theta}_{i}, \boldsymbol{\theta}_{-i}^{\text{ne}}\right) \\ &\text{subject to} \quad \boldsymbol{g}_{i}(\boldsymbol{\theta}_{i}) + \sum_{j \neq i} \boldsymbol{g}_{j}(\boldsymbol{\theta}_{j}^{\text{ne}}) \leq 0. \end{split}$$
-
-**Definition 3.2** (Performative Stable Equilibrium). A vector  $\boldsymbol{\theta}^{\text{pse}} := \text{col}(\boldsymbol{\theta}_1^{\text{pse}}, \dots, \boldsymbol{\theta}_n^{\text{pse}})$  achieves a PSE of the game (1) if it holds for any  $i \in [n]$  that
-
-$$\begin{split} \boldsymbol{\theta}_{i}^{\mathrm{pse}} &\in \operatorname*{arg\,min}_{\boldsymbol{\theta}_{i} \in \boldsymbol{\Omega}_{i}} \quad \mathbb{E}_{\boldsymbol{\xi}_{i} \sim \mathcal{D}_{i}(\boldsymbol{\theta}^{\mathrm{pse}})} J_{i}\left(\boldsymbol{\xi}_{i}; \boldsymbol{\theta}_{i}, \boldsymbol{\theta}_{-i}^{\mathrm{pse}}\right) \\ & \text{subject to} \quad \boldsymbol{g}_{i}(\boldsymbol{\theta}_{i}) + \sum_{j \neq i} \boldsymbol{g}_{j}(\boldsymbol{\theta}_{j}^{\mathrm{pse}}) \preceq \boldsymbol{0}. \end{split}$$
-
-NE is a fundamental concept in game theory. At NE, each player's strategy optimally aligns with its own interest, given the strategies of other players. Hence, no player has an incentive to deviate from its strategy unilaterally. In the case of performative games, the computation of NE needs to take into account the data distributions  $\mathcal{D}_i(\cdot)$  for all  $i \in [n]$ , as they are parameterized by the optimization variable  $\boldsymbol{\theta}$ . However, this information is often unavailable in practice. Instead, at PSE, the data distribution of each player  $i \in [n]$  is fixed at  $\mathcal{D}_i\left(\boldsymbol{\theta}^{\text{pse}}\right)$  and the PSE point achieves an NE of the game (1) under the fixed data distribution of its own deployment. This formulation draws benign properties akin to problems with fixed data distributions, facilitating the adaptation of existing algorithms. Therefore, PSE is more frequently chosen as a performance metric in the literature of PP.
-
-#### 3.1 Existence and Uniqueness of PSE
-
-We first establish the condition for the E&U of the PSE of the game (1). Our approach relies on repeated risk minimization (RRM) for closed-loop retraining. First, we define a mapping  $\mathcal{T}(\boldsymbol{\theta}) := \{\mathcal{T}_i(\boldsymbol{\theta})\}_{i \in [n]}$  that, for any  $i \in [n]$ ,
-
-$$\begin{split} \boldsymbol{\theta}_i' &= \mathcal{T}_i(\boldsymbol{\theta}) := \mathop{\arg\min}_{\boldsymbol{u}_i \in \boldsymbol{\Omega}_i} \quad \mathbb{E}_{\boldsymbol{\xi}_i \sim \mathcal{D}_i(\boldsymbol{\theta}_i, \boldsymbol{\theta}_{-i})} J_i\left(\boldsymbol{\xi}_i; \boldsymbol{u}_i, \boldsymbol{\theta}_{-i}'\right) \\ \text{subject to} \quad \boldsymbol{g}_i(\boldsymbol{u}_i) + \sum_{j \neq i} \boldsymbol{g}_j\left(\boldsymbol{\theta}_j'\right) \leq \mathbf{0}. \end{split}$$
-
-The mapping  $\mathcal{T}(\theta)$  outputs the NE of the game (1) under the fixed data distributions  $\mathcal{D}_i(\theta_i, \theta_{-i})$  for all  $i \in [n]$ . With Assumption 2.1, the E&U of this NE is guaranteed, thereby ensuring the validity of the mapping  $\mathcal{T}(\theta)$ . Based on  $\mathcal{T}(\theta)$ , the RRM updates  $\theta_i^t$  at each iteration t by
-
-<span id="page-4-0"></span>
-$$\boldsymbol{\theta}_i^{t+1} = \mathcal{T}_i(\boldsymbol{\theta}^t), \forall i \in [n].$$
- (2)
-
-Clearly,  $\theta^{t+1}$  is an NE of the game (1) under the deployment of  $\theta^t$ . Additionally, we have that any fixed point of (2) achieves an PSE for the game (1), i.e.,  $\theta^{\text{pse}} = \mathcal{T}(\theta^{\text{pse}})$ . By investigating the convergence the iterative equation (2), we have the following sufficient condition for the E&U of the PSE of the game (1).
-
-<span id="page-4-1"></span>**Theorem 3.3.** Suppose that Assumptions 2.1-2.5 hold. Then, for any  $\theta, \delta \in \Omega$ , the mapping  $\mathcal{T}(\theta)$  satisfies
-
-$$\|\mathcal{T}(\boldsymbol{\theta}) - \mathcal{T}(\boldsymbol{\delta})\|_2 \le \frac{1}{\mu} \sqrt{\sum_{i=1}^n L_i^2 \varepsilon_i^2 \max_{j \in [n]} p_{ij}} \|\boldsymbol{\theta} - \boldsymbol{\delta}\|_2.$$
-
-Thus, if it is satisfied that
-
-<span id="page-4-2"></span>
-$$\frac{1}{\mu}\sqrt{\sum_{i=1}^{n} L_i^2 \varepsilon_i^2 \max_{j \in [n]} p_{ij}} < 1, \tag{3}$$
-
-the sequence generated by the RRM (2) converges to a unique PSE point  $\theta^{\mathrm{pse}}$  at a linear rate that
-
-$$\|\boldsymbol{\theta}^{t+1} - \boldsymbol{\theta}^{\text{pse}}\|_{2} \le \left(\frac{1}{\mu}\sqrt{\sum_{i=1}^{n} L_{i}^{2} \varepsilon_{i}^{2} \max_{j \in [n]} p_{ij}}\right)^{t} \|\boldsymbol{\theta}^{1} - \boldsymbol{\theta}^{\text{pse}}\|_{2}.$$
-
-The proof of Theorem 3.3 is provided in Appendix B. According to Theorem 3.3, under Assumptions 2.1-2.5, when condition (3) holds, we have that: (i) the game (1) admits a unique PSE, and (ii) the RRM method (2) converges linearly to the PSE.
-
-Since the influence weights  $\{p_{ij}\}_{j\in[n]}$  are normalized, with  $\sum_{j=1}^n p_{ij}=1$  for all  $i\in[n]$ , we generally have that  $p_{ij}=\mathcal{O}(\frac{1}{n})$ . Therefore, the contraction condition (3) exhibits good scalability w.r.t. the number of players. Moreover, according to the proof in Appendix B, if for any player  $i\in[n]$ , its distribution  $\mathcal{D}_i(\cdot)$  depends only on its own decision  $\boldsymbol{\theta}_i$ , i.e.,  $p_{ij}=0$  for all  $j\neq i$ , then we have
-
-$$\|\mathcal{T}(\boldsymbol{\theta}) - \mathcal{T}(\boldsymbol{\delta})\|_2 \leq \frac{1}{\mu} \max_{i \in [n]} L_i \varepsilon_i \|\boldsymbol{\delta} - \boldsymbol{\theta}\|_2$$
-.
-
-The contraction of the above iterative equation only requires that  $\frac{1}{\mu} \max_{i \in [n]} L_i \varepsilon_i < 1$ . Furthermore, if all players exhibit equivalent model parameters that  $L_1 = \cdots = L_n = L$  and  $\varepsilon_1 = \cdots = \varepsilon_n = \varepsilon$  and  $p_{ij} = \frac{1}{n}$  for all  $i, j \in [n]$ , condition (3) reduces to  $\frac{L\varepsilon}{\mu} < 1$ , recovering the contraction requirement of (Perdomo et al., 2020) for a single-agent PP case.
-
-#### 3.2 Existence and Uniqueness of NE
-
-First, we define a gradient mapping  $G_{\boldsymbol{\theta}}^{(i)}(\boldsymbol{\delta}_i, \boldsymbol{\delta}_{-i}) := \mathbb{E}_{\boldsymbol{\xi}_i \sim \mathcal{D}_i(\boldsymbol{\theta})} \nabla_{\boldsymbol{\delta}_i} J_i(\boldsymbol{\xi}_i; \boldsymbol{\delta}_i, \boldsymbol{\delta}_{-i})$  for any  $i \in [n]$ , and  $G_{\theta}(\delta) := \operatorname{col}\left(G_{\theta}^{(1)}(\delta), \cdots, G_{\theta}^{(n)}(\delta)\right)$ . Moreover, for any  $i \in [n]$ , define
-
-$$H_{\boldsymbol{\theta}_{i},\boldsymbol{\theta}_{-i}}^{(i)}(\boldsymbol{\delta}) \coloneqq \left. \nabla_{\boldsymbol{u}_{i}} \mathbb{E}_{\boldsymbol{\xi}_{i} \sim \mathcal{D}_{i}(\boldsymbol{u}_{i},\boldsymbol{\theta}_{-i})} \left[ J_{i}\left(\boldsymbol{\xi}_{i};\boldsymbol{\delta}\right) \right] \right|_{\boldsymbol{u}_{i} = \boldsymbol{\theta}_{i}}$$
-
-and  $H_{\boldsymbol{\theta}}(\boldsymbol{\delta}) := \operatorname{col}\left(H_{\boldsymbol{\theta}_{1},\boldsymbol{\theta}_{-1}}^{(1)}(\boldsymbol{\delta}),\cdots,H_{\boldsymbol{\theta}_{n},\boldsymbol{\theta}_{-n}}^{(n)}(\boldsymbol{\delta})\right)$ . Then, for any  $i \in [n]$ , the gradient of the performative risk  $\operatorname{PR}_{i}(\boldsymbol{\theta}_{i},\boldsymbol{\theta}_{-i})$  w.r.t.  $\boldsymbol{\theta}_{i}$  is given by
-
-$$\nabla_{\boldsymbol{\theta}_i} \operatorname{PR}_i(\boldsymbol{\theta}_i, \boldsymbol{\theta}_{-i}) = G_{\boldsymbol{\theta}_i, \boldsymbol{\theta}_{-i}}^{(i)}(\boldsymbol{\theta}_i, \boldsymbol{\theta}_{-i}) + H_{\boldsymbol{\theta}_i, \boldsymbol{\theta}_{-i}}^{(i)}(\boldsymbol{\theta}_i, \boldsymbol{\theta}_{-i}).$$
-
-Define  $\nabla \mathrm{PR}(\boldsymbol{\theta}) := \mathrm{col}\left(\nabla_{\boldsymbol{\theta}_1} \mathrm{PR}_i(\boldsymbol{\theta}), \cdots, \nabla_{\boldsymbol{\theta}_n} \mathrm{PR}_n(\boldsymbol{\theta})\right)$ , we further have
-
-<span id="page-5-1"></span>
-$$\nabla PR(\boldsymbol{\theta}) = G_{\boldsymbol{\theta}}(\boldsymbol{\theta}) + H_{\boldsymbol{\theta}}(\boldsymbol{\theta}).$$
-
-From Facchinei and Pang (2003, Theorem 2.3.3(b)), to prove the E&U of the NE of the (1), we require the strongly monotonivity of the gradient mapping  $\nabla PR(\theta)$ . Therefore, we have the following sufficient condition for the E&U of the NE of the game (1).
-
-<span id="page-5-0"></span>**Theorem 3.4.** Suppose that Assumptions 2.1-2.5 hold. If it is satisfied that
-
-$$\mu - \sum_{i=1}^{n} L_i \varepsilon_i \max_{j \in [n]} \sqrt{p_{ij}} - \sqrt{\sum_{i=1}^{n} L_i^2 \varepsilon_i^2 p_{ii}} > 0, \tag{4}$$
+Decentralized Noncooperative Games with Coupled
+Decision-Dependent Distributions
+
+Wenjing Yan
+Xuanyu Cao ∗
+Department of Electronic and Computer Engineering
+The Hong Kong University of Science and Technology
+wj.yan@connect.ust.hk, eexcao@ust.hk
+
+Abstract
+
+Distribution variations in machine learning, driven by the dynamic nature of deploy-
+ment environments, signiﬁcantly impact the performance of learning models. This
+paper explores endogenous distribution shifts in learning systems, where deployed
+models inﬂuence environments, which in turn alters the data distributions that the
+learning models rely on. This phenomenon is formulated by a decision-dependent
+distribution mapping within the recently introduced framework of performative
+prediction (PP) (Perdomo et al., 2020). Our study investigates the performative
+effect in a decentralized noncooperative game, where players aim to minimize
+private cost functions while simultaneously managing coupled inequality con-
+straints. In this context, we examine two equilibrium concepts for the studied game:
+performative stable equilibrium (PSE) and Nash equilibrium (NE), and establish
+sufﬁcient conditions for their existence and uniqueness. Notably, we provide the
+ﬁrst upper bound on the distance between the PSE and NE in the literature, which
+is challenging to evaluate due to the absence of strong convexity on the joint cost
+function. Furthermore, we develop a decentralized stochastic primal-dual algorithm
+for efﬁciently computing the PSE point. By rigorously bounding the performative
+effect, we prove that the proposed algorithm achieves sublinear convergence rates
+for both performative regret and constraint violations and maintains the same order
+of convergence rate as the case without performativity. Numerical experiments
+further conﬁrm the effectiveness of our algorithm and theoretical results.
+
+1
+Introduction
+
+Machine learning aims to generalize models trained on given datasets to make accurate predic-
+tions or decisions on new, unseen data (El Naqa and Murphy, 2015). The effectiveness of those
+models depends on the alignment between the training datasets and deployment environments
+(Quinonero-Candela et al., 2008). However, real-world environments are seldom static and often
+exhibit ﬂuctuations that can severely degrade model performance (Zhou, 2022). In particular, shifts
+in data-generating distributions, driven by the dynamic nature of real-world conditions, present
+signiﬁcant challenges for model deployment.
+
+Distribution shifts in machine learning can occur exogenously or endogenously. Exogenous distri-
+bution shifts are driven by external factors beyond the control of the learning platforms, such as
+environmental changes (Chan et al., 2020) or policy amendments (Wu et al., 2021). In contrast,
+endogenous shifts arise from the system’s inherent dynamics and interactions, where the deployed
+models affect environments, which in turn alters the data distributions that the learning models rely
+on (Dong et al., 2018). For instance, an increase in commodity prices may decrease user interest,
+thereby impacting sales. The key distinction lies in the controllability of endogenous shifts, providing
+
+∗Corresponding Author.
+
+38th Conference on Neural Information Processing Systems (NeurIPS 2024).
+
+
+---Page Break---
+an opportunity for designers to either exploit these shifts for improved performance or mitigate
+unintended consequences (Dean et al., 2023).
+
+While substantial efforts have been made to address exogenous distribution changes, such as covariate
+shift (Chan et al., 2020), label shift (Wu et al., 2021), and concept drift (Lu et al., 2018), relatively
+little attention has been paid to the challenges posed by endogenous distribution shifts. Tackling
+these endogenous shifts is particularly challenging as data distributions are intrinsically linked to
+the decisions made by the learning model itself (Perdomo et al., 2020). As a result, addressing
+endogenous shifts may require the explicit modeling of feedback loops, consideration of causal
+relationships, and the adaptation of models to dynamic environments.
+
+A notable advancement in this area is the recently proposed framework of “performative prediction
+(PP)” (Perdomo et al., 2020), also referred to as “decision-dependent learning” (Drusvyatskiy and
+Xiao, 2023). This framework elegantly captures the dynamic interplay between decisions and
+data distributions through a decision-dependent mapping, denoted by D(θ) where θ represents the
+decision variable. By linking θ to the data distribution, this formulation bridges the gap between
+model deployment and parameter optimization. Following the seminal work of (Perdomo et al., 2020),
+a growing body of research has emerged, focusing on stability and optimality analysis (Piliouras
+and Yu, 2023; Miller et al., 2021), as well as algorithmic design for various settings, including
+reinforcement learning (Mandal et al., 2023), online learning (Wood et al., 2021), bandit problems
+(Jagadeesan et al., 2022), and bilevel optimization (Lu, 2023).
+
+This paper investigates endogenous distribution shifts in a decentralized noncooperative game, where
+players aim to minimize private cost functions while simultaneously managing coupled inequality
+constraints. To contextualize this setting, consider scenarios where strategic responses exhibit in
+learning environments and competitive interactions occur among players. For example, in autonomous
+vehicular networks, multiple vehicles compete to select their routes under constraints such as road
+capacities, trafﬁc congestion, and travel costs. The route choices of each vehicle inﬂuence trafﬁc
+patterns and consequently affect the travel times experienced by other vehicles (Mori et al., 2015).
+Similarly, in ﬁnance, traders compete to maximize proﬁts under constraints like market capacities
+and inventory levels. The trading strategies of these participants impact market volatility and the
+distribution of asset prices, creating a dynamic pricing landscape (Fattouh and Mahadeva, 2014).
+These dynamics extend to other domains, such as electricity market competition (Moshari et al.,
+2010), ride-sharing platforms (Narang et al., 2023), natural resource extraction (Cust and Poelhekke,
+2015), and online advertising auctions (Varian, 2009).
+
+Despite its pervasiveness, this performative phenomenon has largely been overlooked in the studies of
+decentralized noncooperative games. This paper addresses the problem by formulating performativity
+using coupled decision-dependent distributions, following the PP framework of (Perdomo et al.,
+2020). However, the intricate interplay between decentralized players and endogenous distribution
+shifts presents challenging theoretical and algorithmic questions: How do strategic responses in
+learning environments inﬂuence the game’s equilibrium? How can players adapt their strategies
+effectively when confronted with coupled decision-dependent distributions? How can we design
+algorithms to exploit these dynamics for optimal decision-making? These questions form the core
+of our investigation, guiding us toward more resilient, adaptive, and efﬁcient learning outcomes in
+decentralized games, especially in environments characterized by continuously evolving data and
+decision-making processes. Our main contributions are summarized below:
+
+• We initially formulate the problem of decentralized noncooperative games with data perfor-
+mativity, where selﬁsh players seek to minimize individual costs while managing coupled
+inequality constraints. Under this setting, we examine two equilibrium concepts: performa-
+tive stable equilibrium (PSE) and Nash equilibrium (NE), and establish sufﬁcient conditions
+for their existence and uniqueness. Compared to conventional games, this examination is
+more complicated due to the interplay between decision-making and distribution changes.
+Notably, we make a signiﬁcant contribution by providing the ﬁrst upper bound on the
+distance between the PSE and NE in the literature. Computing this distance in PP games is
+challenging due to the absence of strong convexity on the joint cost function, an essential
+property for determining the optimality gap of performative stable points in previous work.
+Instead, we characterize the distance by leveraging relations from strong duality and derive
+a result comparable to the ﬁndings of the prior work (Perdomo et al., 2020; Lu, 2023).
+
+2
+
+
+---Page Break---
+• To compute the PSE point of the PP-game, we propose a decentralized stochastic primal-dual
+algorithm based on repeated risk minimization (RRM). The development and convergence
+analysis of this algorithm face two primary challenges. First, there is a complex interaction
+between decentralized competition and endogenous distribution shifts. Second, players only
+have partial observation, as they communicate solely with neighbors, despite their private
+cost functions being inﬂuenced by the strategies of all players. We evaluate the performance
+of our algorithm by two commonly used metrics: performative regret, which measures the
+suboptimality of the strategy sequence generated by RRM relative to the PSE point, and
+constraint violation. By rigorously bounding the performative effect, we prove that the
+proposed algorithm achieves sublinear convergence rates for both metrics. Furthermore,
+our results show that while the performative effect slows down convergence, it does not
+degrade the order of performative regret compared to the case without performativity (Lu
+et al., 2020).
+
+Finally, we conduct numerical experiments on a networked Cournot game and a ride-share market.
+The simulation results conﬁrm the sublinear convergence of our algorithm. Furthermore, the results
+demonstrate that while greater performative strength leads to a wider gap between the PSE and NE,
+the discrepancy between these two equilibria remains marginal. This veriﬁes both the effectiveness
+of the PSE solutions and the accuracy of our distance analysis between the PSE and NE.
+
+Related Work: Among the numerous existing studies, two closely related works (Narang et al.,
+2023) and (Wang et al., 2023) have considered performative behaviors in games. A key distinction in
+our work is that our model requires all players’ collective strategies to adhere to the constraints of the
+learning system, whereas both (Narang et al., 2023) and (Wang et al., 2023) address unconstrained
+settings. This difference results in fundamentally distinct algorithmic designs and convergence
+analyses. Our approach employs a primal-dual technique and requires consensus, whereas their
+methods only rely on local stochastic gradient descent. Additionally, we consider a mathematically
+richer model compared to (Wang et al., 2023), whose framework is structured in a speciﬁc form
+involving local costs dependent solely on individual strategies and a regularizer quantifying similarity
+among neighboring strategies. Furthermore, our algorithm design accounts for practical constraints
+where players can only communicate with their immediate neighbors, while (Narang et al., 2023)
+assumes full accessibility to all players’ strategies across the entire network. Importantly, our work
+makes a signiﬁcant contribution by providing the ﬁrst upper bound on the distance between the
+performative stable equilibrium (PSE) and Nash equilibrium (NE)—a gap not previously addressed.
+Other related works such as (Li et al., 2022) and (Piliouras and Yu, 2023), have studied performative
+prediction in decentralized multi-agent optimization. The former focuses on consensus-seeking
+agents, while the latter is restricted to location-scale families. Finally, (Yan and Cao, 2024b)
+considers the constrained performative prediction problem in a single-agent setting, whereas our
+paper addresses decentralized noncooperative games. A more comprehensive literature review is
+provided in Appendix A.
+
+2
+Problem Formulation
+
+Consider a decentralized noncooperative game with n players. Each player i selects a strategy (or,
+interchangeably, decision, action), denoted as θi, from its feasible set Ωi ⊆Rd. Let the collective
+decisions of all players be denoted as θ := col (θ1, · · · , θn), and the collective decisions of all players
+except player i be represented as θ−i := col (θ1, · · · , θi−1, θi+1, · · · , θn), for any i ∈[n], where
+[n] denotes the set of integers {1, 2, . . . , n}. Each player i has a private cost function Ji(ξi; θi, θ−i),
+which depends on the random variable ξi ∈Ξi, the player’s private decision θi, and the decisions of
+all other players θ−i. This paper considers a scenario where the underlying populations strategically
+respond to the players’ decisions, causing shifts in data distributions. This interplay is modeled by
+a decision-dependent distribution mapping ξi ∼Di (θi, θ−i) for all i ∈[n]. The objective of each
+player i is to selﬁshly minimize its performative risk Eξi∼Di(θi,θ−i)Ji(ξi; θi, θ−i) (abbreviated as
+PRi(θi, θ−i)), subject to a coupled constriant Pn
+i=1 gi(θi) ⪯0, i.e.,
+
+min
+θi∈Ωi
+Eξi∼Di(θi,θ−i)Ji (ξi; θi, θ−i)
+
+subject to
+gi(θi) + P
+
+j̸=i gj(θj) ⪯0.
+(1)
+
+Both Ji(·) and gi(·) are only locally accessible to player i for all i ∈[n]. In the game (1), each player
+solves its private optimization problem to determine the best strategy, given the current strategies
+
+3
+
+
+---Page Break---
+of all the other players. An equilibrium of the game (1) corresponds to a set of strategies where no
+player can improve its performance by deviating unilaterally from its strategy.
+
+Denote by ξ := col (ξ1, · · · , ξn) the concatenation of the variables ξi and by J (ξ; θ) :=
+col (J1 (ξ1; θ) , · · · , Jn (ξn; θ)) the concatenation of the cost functions Ji(·) for all i
+∈
+[n].
+A stochastic pseudogradient mapping of J (ξ; θ) is deﬁned as ∇J (ξ; θ)
+:=
+col (∇θ1J1 (ξ1; θ) , · · · , ∇θnJn (ξn; θ)). We have the following assumption on ∇J (ξ; θ).
+Assumption 2.1. There exists a constant µ > 0 such that the stochastic gradient mapping ∇J (ξ; θ)
+is µ-strongly monotone, i.e.,
+
+∇J (ξ; θ) −∇J
+ 
+ξ; θ′
+, θ −θ′
+≥µ∥θ −θ′∥2
+2, ∀ξ ∈Ξ, θ, θ′ ∈Ω,
+where Ξ := Ξ1 × · · · × Ξn and Ω:= Ω1 × · · · × Ωn.
+
+Assumption 2.1 is commonly made in the literature of game theory. It sufﬁces to guarantee the
+existence of Nash equilibrium for a stochastic game with ﬁxed data distributions (Facchinei and Pang,
+2003, Theorem 2.3.3(b)). However, in our paper, since the data distributions are decision-dependent,
+Assumption 2.1 does not imply the monotonicity of the gradient mapping of the joint performative
+risk, denoted by PR(·) := col (PR1(·), · · · , PRn(·)). Therefore, the existence and uniqueness
+(E&U) conditions for the Nash equilibrium of the game (1) need further investigation.
+
+We deﬁne a graph G(P) to represent the impact of players’ decisions on the data distributions of
+different players. In G(P), the weight pij > 0 if player j’s decision affects player i’s data distribution,
+and pij = 0 otherwise. Particularly, pii represents the weight of self-inﬂuence. These weights are
+normalized as Pn
+j=1 pij = 1, for all i ∈[n]. Clearly, the larger the weight pij, the stronger the effect
+of player j’s decision on the data distribution of player i.
+
+Let W1 (D, D′) represent the Wasserstein-1 distance between two probability measures D and D′.
+Following (Wang et al., 2023), we impose the following assumption on the distributions {Di}i∈[n].
+
+Assumption 2.2. For any i ∈[n], there exists a constant εi ≥0 such that, ∀θ, θ′ ∈Ω, the
+
+distribution mapping Di is constrained by W1
+ 
+Di (θ) , Di
+ 
+θ′
+≤εi
+qPn
+j=1 pij
+θj −θ′
+j
+2
+2.
+
+For any i ∈[n], the parameter εi bounds the sensitivity of player i’s distribution with respect to (w.r.t.)
+the decision variations of all players. This ε-sensitivity property of distributions is conceptually akin
+to the Lipschitz continuity of functions that quantiﬁes the variation of function values w.r.t argument
+changes. We also require the following assumptions.
+Assumption 2.3. For any i ∈[n], the non-empty feasible set Ωi is closed, convex, and bounded, i.e.,
+there exists a constant C ≥0 such that, ∀θi ∈Ωi, ∥θi∥2 ≤C.
+Assumption 2.4. For any i ∈[n] and θi ∈Ωi, the cost function Ji(ξi; θi, θ−i) is convex
+w.r.t.
+θi.
+Moreover, there exists a constant Li ≥0 such that Ji (ξi; θ) is Li-smooth, i.e,
+∇Ji (ξi; θ) −∇Ji
+ 
+ξ′
+i; θ′
+2 ≤Li
+ ξi −ξ′
+i
+
+2 +
+θ −θ′
+2
+
+, ∀ξi, ξ′
+i ∈Ξi, θ, θ′ ∈Ω.
+
+Assumption 2.5. For any i ∈[n] and θi ∈Ωi, the constraint function gi(θi) is convex w.r.t. θi.
+Moreover, there exist a constant Gg ≥0 such that gi(·) is Gg-Lipschitz, i.e.,
+gi(θi) −gi(θ′
+i)
+
+2 ≤
+Gg∥θi −θ′
+i∥2, ∀θi, θ′
+i ∈Ωi.
+
+Assumptions 2.3 and 2.5 are widely used in constrained optimization (Bertsekas, 2014; Yan and Cao,
+2024a), and Assumption 2.4 is standard in the PP literature. From Yan and Cao (2024a, Proposition 1),
+under Assumptions 2.3 and 2.4, the cost function Ji(ξi; θ), ∀i ∈[n] is Lipschitz continuous, i.e., there
+exist a constant Gi ≥0 such that |Ji(ξi; θ)−Ji(ξ′
+i; θ′)| ≤Gi
+ ξi −ξ′
+i
+
+2 +
+θ −θ′
+2
+
+, ∀ξi, ξ′
+i ∈
+Ξi, θ, θ′ ∈Ω. Moreover, Assumptions 2.3 and 2.5 imply the boundedness of ∥gi(θi)∥2, i.e., there
+exists a constant B ≥0 such that ∥gi(θi)∥2 ≤B, ∀θi ∈Ωi, i ∈[n].
+
+3
+Equilibrium of the PP-Game
+
+This section examines two fundamental equilibrium concepts of the performative game (1): Nash
+equilibrium (NE) and performative stable equilibrium (PSE), as deﬁned below.
+Deﬁnition 3.1 (Nash Equilibrium). A vector θne := col (θne
+1 , . . . , θne
+n ) achieves an NE of the game
+(1) if it holds for any i ∈[n] that
+
+θne
+i
+∈arg min
+θi∈Ωi
+Eξi∼Di(θi,θne
+−i)Ji
+ 
+ξi; θi, θne
+−i
+
+
+subject to
+gi(θi) + P
+
+j̸=i gj(θne
+j ) ⪯0.
+
+4
+
+
+---Page Break---
+Deﬁnition 3.2 (Performative Stable Equilibrium). A vector θpse := col (θpse
+1 , . . . , θpse
+n ) achieves a
+PSE of the game (1) if it holds for any i ∈[n] that
+
+θpse
+i
+∈arg min
+θi∈Ωi
+Eξi∼Di(θpse)Ji
+ 
+ξi; θi, θpse
+−i
+
+
+subject to
+gi(θi) + P
+
+j̸=i gj(θpse
+j
+) ⪯0.
+
+NE is a fundamental concept in game theory. At NE, each player’s strategy optimally aligns with
+its own interest, given the strategies of other players. Hence, no player has an incentive to deviate
+from its strategy unilaterally. In the case of performative games, the computation of NE needs to take
+into account the data distributions Di(·) for all i ∈[n], as they are parameterized by the optimization
+variable θ. However, this information is often unavailable in practice. Instead, at PSE, the data
+distribution of each player i ∈[n] is ﬁxed at Di (θpse) and the PSE point achieves an NE of the game
+(1) under the ﬁxed data distribution of its own deployment. This formulation draws benign properties
+akin to problems with ﬁxed data distributions, facilitating the adaptation of existing algorithms.
+Therefore, PSE is more frequently chosen as a performance metric in the literature of PP.
+
+3.1
+Existence and Uniqueness of PSE
+
+We ﬁrst establish the condition for the E&U of the PSE of the game (1). Our approach relies on
+repeated risk minimization (RRM) for closed-loop retraining. First, we deﬁne a mapping T (θ) :=
+{Ti(θ)}i∈[n] that, for any i ∈[n],
+
+θ′
+i = Ti(θ) := arg min
+ui∈Ωi
+Eξi∼Di(θi,θ−i)Ji
+ 
+ξi; ui, θ′
+−i
+
+
+subject to
+gi(ui) + P
+
+j̸=i gj
+ 
+θ′
+j
+
+⪯0.
+
+The mapping T (θ) outputs the NE of the game (1) under the ﬁxed data distributions Di(θi, θ−i) for
+all i ∈[n]. With Assumption 2.1, the E&U of this NE is guaranteed, thereby ensuring the validity of
+the mapping T (θ). Based on T (θ), the RRM updates θt
+i at each iteration t by
+
+θt+1
+i
+= Ti(θt), ∀i ∈[n].
+(2)
+
+Clearly, θt+1 is an NE of the game (1) under the deployment of θt. Additionally, we have that
+any ﬁxed point of (2) achieves an PSE for the game (1), i.e., θpse = T (θpse). By investigating the
+convergence the iterative equation (2), we have the following sufﬁcient condition for the E&U of the
+PSE of the game (1).
+Theorem 3.3. Suppose that Assumptions 2.1-2.5 hold. Then, for any θ, δ ∈Ω, the mapping T (θ)
+satisﬁes
+
+∥T (θ) −T (δ)∥2 ≤1
+
+µ
+qPn
+i=1 L2
+i ε2
+i maxj∈[n] pij ∥θ −δ∥2 .
+
+Thus, if it is satisﬁed that
+
+1
+µ
+qPn
+i=1 L2
+i ε2
+i maxj∈[n] pij < 1,
+(3)
+
+the sequence generated by the RRM (2) converges to a unique PSE point θpse at a linear rate that
+
+∥θt+1 −θpse∥2 ≤
+
+1
+µ
+qPn
+i=1 L2
+i ε2
+i maxj∈[n] pij
+t θ1 −θpse
+2 .
+
+The proof of Theorem 3.3 is provided in Appendix B. According to Theorem 3.3, under Assumptions
+2.1-2.5, when condition (3) holds, we have that: (i) the game (1) admits a unique PSE, and (ii) the
+RRM method (2) converges linearly to the PSE.
+
+Since the inﬂuence weights {pij}j∈[n] are normalized, with Pn
+j=1 pij = 1 for all i ∈[n], we
+generally have that pij = O( 1
+
+n). Therefore, the contraction condition (3) exhibits good scalability
+w.r.t. the number of players. Moreover, according to the proof in Appendix B, if for any player
+i ∈[n], its distribution Di(·) depends only on its own decision θi, i.e., pij = 0 for all j ̸= i, then we
+have
+
+∥T (θ) −T (δ)∥2 ≤1
+
+µ maxi∈[n] Liεi ∥δ −θ∥2 .
+
+5
+
+
+---Page Break---
+The contraction of the above iterative equation only requires that 1
+
+µ maxi∈[n] Liεi < 1. Furthermore,
+if all players exhibit equivalent model parameters that L1 = · · · = Ln = L and ε1 = · · · = εn = ε
+and pij = 1
+
+n for all i, j ∈[n], condition (3) reduces to Lε
+
+µ < 1, recovering the contraction requirement
+of (Perdomo et al., 2020) for a single-agent PP case.
+
+3.2
+Existence and Uniqueness of NE
+
+First, we deﬁne a gradient mapping G(i)
+θ (δi, δ−i) := Eξi∼Di(θ)∇δiJi (ξi; δi, δ−i) for any i ∈[n],
+
+and Gθ(δ) := col
+
+G(1)
+θ (δ), · · · , G(n)
+θ (δ)
+
+. Moreover, for any i ∈[n], deﬁne
+
+H(i)
+θi,θ−i(δ) := ∇uiEξi∼Di(ui,θ−i) [Ji (ξi; δ)]
+
+ui=θi
+
+and Hθ(δ) := col
+
+H(1)
+θ1,θ−1(δ), · · · , H(n)
+θn,θ−n(δ)
+
+. Then, for any i ∈[n], the gradient of the
+
+performative risk PRi(θi, θ−i) w.r.t. θi is given by
+
+∇θiPRi(θi, θ−i) = G(i)
+θi,θ−i(θi, θ−i) + H(i)
+θi,θ−i(θi, θ−i).
+
+Deﬁne ∇PR(θ) := col (∇θ1PRi(θ), · · · , ∇θnPRn(θ)), we further have
+
+∇PR(θ) = Gθ(θ) + Hθ(θ).
+
+From Facchinei and Pang (2003, Theorem 2.3.3(b)), to prove the E&U of the NE of the (1), we
+require the strongly monotonivity of the gradient mapping ∇PR(θ). Therefore, we have the following
+sufﬁcient condition for the E&U of the NE of the game (1).
+Theorem 3.4. Suppose that Assumptions 2.1-2.5 hold. If it is satisﬁed that
+
+µ −Pn
+i=1 Liεi maxj∈[n] √pij −
+pPn
+i=1 L2
+i ε2
+i pii > 0,
+(4)
 
 then, the PP-game (1) is strongly monotone and admits a unique NE.
 
-The proof of Theorem 3.4 is presented in Appendix C. Since  $p_{ij}$  characterizes the influence of player j's decision on the data distribution of player i, we typically have  $p_{ij} \leq p_{ii}$  for  $j \neq i$  and thus  $\max_{j\in[n]} p_{ij} = p_{ii}$  for all  $i\in[n]$ . Then, the condition (4) reduces to  $\mu - \sum_{i=1}^n L_i \varepsilon_i p_{ii}$  $\sqrt{\sum_{i=1}^n L_i^2 \varepsilon_i^2 p_{ii}} > 0$ . Similarly, when  $L_1 = \cdots = L_n = L$ ,  $\varepsilon_1 = \cdots = \varepsilon_n = \varepsilon$ , and  $p_{ij} = \frac{1}{n}$  for all  $i,j \in [n]$ , we require that  $\mu - 2L\varepsilon > 0$ , i.e.,  $\varepsilon \leq \frac{\mu}{2L}$ , which recovers the condition to guarantee the convexity of the performative risk  $\operatorname{PR}(\cdot)$ , and thereby the E&U of the performative optimal point of (Miller et al., 2021) for single-agent PP.
+The proof of Theorem 3.4 is presented in Appendix C. Since pij characterizes the inﬂuence of
+player j’s decision on the data distribution of player i, we typically have pij ≤pii for j ̸= i and
+thus maxj∈[n] pij = pii for all i ∈[n]. Then, the condition (4) reduces to µ −Pn
+i=1 Liεipii −
+pPn
+i=1 L2
+i ε2
+i pii > 0. Similarly, when L1 = · · · = Ln = L, ε1 = · · · = εn = ε, and pij = 1
 
-#### 3.3 Distance Between PSE and NE
+n for
+all i, j ∈[n], we require that µ −2Lε > 0, i.e., ε ≤
+µ
+2L, which recovers the condition to guarantee
+the convexity of the performative risk PR(·), and thereby the E&U of the performative optimal point
+of (Miller et al., 2021) for single-agent PP.
 
-<span id="page-5-2"></span> $\mu - \sum_{i=1}^{n} L_i \varepsilon_i \max_{j \in [n]} \sqrt{p_{ij}}$  and  $\alpha$ **Theorem 3.5.** Define  $\widetilde{\mu}$ :=  $\sum_{i=1}^{n} G_i \left(1 + \varepsilon_i \max_{j \in [n]} \sqrt{p_{ij}}\right).$  Suppose that Assumptions 2.1-2.5 hold and  $\widetilde{\mu} > 0$ . for every PSE point and NE point, we have the following relations:
+3.3
+Distance Between PSE and NE
 
-$$\|\boldsymbol{\theta}^{\mathrm{pse}} - \boldsymbol{\theta}^{\mathrm{ne}}\|_2 \leq \tfrac{1}{\widetilde{\mu}} \sqrt{\sum_{i=1}^n G_i^2 \varepsilon_i^2 p_{ii}} \quad \textit{and} \quad |\mathrm{PR}(\boldsymbol{\theta}^{\mathrm{pse}}) - \mathrm{PR}(\boldsymbol{\theta}^{\mathrm{ne}})| \leq \tfrac{\alpha}{\widetilde{\mu}} \sqrt{\sum_{i=1}^n G_i^2 \varepsilon_i^2 p_{ii}}.$$
+Theorem
+3.5.
+Deﬁne
+eµ
+:=
+µ
+−
+Pn
+i=1 Liεi maxj∈[n] √pij
+and
+α
+:=
+Pn
+i=1 Gi
+ 
+1 + εi maxj∈[n] √pij
+
+.
+Suppose that Assumptions 2.1-2.5 hold and eµ > 0.
+Then,
+for every PSE point and NE point, we have the following relations:
 
-The proof of Theorem 3.5 is presented in Appendix D. According to Theorem 3.5, the distance between the PSE and NE of the game (1) depends on the cost functions' parameters  $\mu$ ,  $\{G_i\}$ ,  $\{L_i\}$ , as well as the sensitivity of the data distributions  $\{\varepsilon_i\}$ . Larger sensitivity parameters widen the gap between the PSE and NE, while a bigger monotonicity parameter  $\mu$  reduces it. Notably, when the sensitivity parameter  $\varepsilon_i = 0$  for all  $i \in [n]$ , the game (1) reduces to a conventional stochastic game with fixed data distributions, and as a result, the PSE and NE converge to the same point.
+∥θpse −θne∥2 ≤1
 
-To the best of our knowledge, this is the first result on the distance between PSE and NE of PP-games. Characterizing this distance is challenging in games due to the lack of strong convexity on the joint cost function  $J(\cdot)$ , which is an essential property for determining the optimality gap of performative stable points in previous work (Perdomo et al., 2020; Lu, 2023). In this paper, we characterize this gap by leveraging relations from strong duality (Boyd and Vandenberghe, 2004; Facchinei and Pang, 2010). Our result is comparable to the findings in (Perdomo et al., 2020) for single-agent PP problems wherein this optimality gap is bounded by  $\frac{2L\varepsilon}{\mu}$ . In our case, when  $G_1=\cdots=G_n=G$ ,  $\varepsilon_1=\cdots=\varepsilon_n=\varepsilon$  and  $p_{ij}=\frac{1}{n}$  for all  $i,j\in[n]$ , we have  $\|\pmb{\theta}^{\mathrm{pse}}-\pmb{\theta}^{\mathrm{ne}}\|_2\leq \frac{G\varepsilon}{\mu-L\varepsilon}$ .
+eµ
+pPn
+i=1 G2
+i ε2
+i pii
+and
+|PR(θpse) −PR(θne)| ≤α
 
-$$\varepsilon_1=\dots=\varepsilon_n=\varepsilon$$
- and  $p_{ij}=\frac{1}{n}$  for all  $i,j\in[n]$ , we have  $\|\boldsymbol{\theta}^{\rm pse}-\boldsymbol{\theta}^{\rm ne}\|_2\leq\frac{G\varepsilon}{\mu-L\varepsilon}$ 
+eµ
+pPn
+i=1 G2
+i ε2
+i pii.
 
-**Algorithm 1** Decentralized Stochastic Primal-Dual Algorithm: The Procedures at Player  $i, \forall i \in [n]$ :
+The proof of Theorem 3.5 is presented in Appendix D. According to Theorem 3.5, the distance
+between the PSE and NE of the game (1) depends on the cost functions’ parameters µ, {Gi}, {Li},
+as well as the sensitivity of the data distributions {εi}. Larger sensitivity parameters widen the gap
+between the PSE and NE, while a bigger monotonicity parameter µ reduces it. Notably, when the
+sensitivity parameter εi = 0 for all i ∈[n], the game (1) reduces to a conventional stochastic game
+with ﬁxed data distributions, and as a result, the PSE and NE converge to the same point.
 
-- <span id="page-6-0"></span>1: Initialize  $\theta_i^1 \in \Xi_i$  arbitrarily. Set  $\lambda_i^1 = \mathbf{0}$  and  $\widehat{\theta}_{ih}^1 = \mathbf{0}$  for all  $h \neq i$ .
-- 2: **for** t = 1 to T **do**
-- Exchange  $\boldsymbol{\theta}_{i}^{t}$ ,  $\widehat{\boldsymbol{\theta}}_{i}^{t}$ , and  $\boldsymbol{\lambda}_{i}^{t}$  with all neighbors; Update the estimate  $\widehat{\boldsymbol{\theta}}_{ih}^{t}$  for all  $h \neq i$  by:  $\widehat{\boldsymbol{\theta}}_{ih}^{t+1} = \sum_{k \neq h} a_{ik} \widehat{\boldsymbol{\theta}}_{kh}^{t} + a_{ih} \boldsymbol{\theta}_{h}^{t}$ ; Deploy the model  $\boldsymbol{\theta}_{i}^{t}$  and sample  $\boldsymbol{\xi}_{i}^{t} \sim \mathcal{D}_{i}(\boldsymbol{\theta}_{i}^{t}, \boldsymbol{\theta}_{-i}^{t})$ ; 4:
-- Update the primal variable by:  $\boldsymbol{\theta}_i^{t+1} = P_{\boldsymbol{\Omega}_i} \left[ \boldsymbol{\theta}_i^t \gamma_t \left( \nabla_{\boldsymbol{\theta}_i} J_i \left( \boldsymbol{\xi}_i^t; \boldsymbol{\theta}_i^t, \widehat{\boldsymbol{\theta}}_i^t \right) + \gamma_t \nabla_{\boldsymbol{\theta}_i} (\boldsymbol{\theta}_i^t)^\top \boldsymbol{\lambda}_i^t \right) \right];$
-- Update the dual variable by:  $\boldsymbol{\lambda}_{i}^{t+1} = \left[ \left( 1 \gamma_{t}^{2} \right) \sum_{j \in \mathcal{N}_{i}} a_{ij} \boldsymbol{\lambda}_{j}^{t} + \gamma_{t} \boldsymbol{g}_{i} \left( \boldsymbol{\theta}_{i}^{t} \right) \right]_{\perp}$ .
-- 8: end for
+To the best of our knowledge, this is the ﬁrst result on the distance between PSE and NE of PP-games.
+Characterizing this distance is challenging in games due to the lack of strong convexity on the joint
+cost function J(·), which is an essential property for determining the optimality gap of performative
+stable points in previous work (Perdomo et al., 2020; Lu, 2023). In this paper, we characterize
+this gap by leveraging relations from strong duality (Boyd and Vandenberghe, 2004; Facchinei and
+Pang, 2010). Our result is comparable to the ﬁndings in (Perdomo et al., 2020) for single-agent PP
+problems wherein this optimality gap is bounded by 2Lε
 
-# Computation of the PSE
+µ . In our case, when G1 = · · · = Gn = G,
+ε1 = · · · = εn = ε and pij = 1
 
-Although RRM theoretically has the capability to find a PSE point, how to perform risk minimization at its each update remains unknown. Moreover, RRM requires the computation of an NE for each deployment, which is computationally intensive. In this section, we present a decentralized stochastic primal-dual algorithm for efficiently computing the PSE of the game (1). Theoretical analysis is also provided on the convergence of the proposed algorithm.
+n for all i, j ∈[n], we have ∥θpse −θne∥2 ≤
+Gε
+µ−Lε.
 
-#### <span id="page-6-1"></span>4.1 Algorithm Development
+6
 
-For each player  $i \in [n]$ , define a regularized Lagrangian as
 
-$$\mathcal{L}_{\boldsymbol{\delta}}^{(i)}(\boldsymbol{\theta}_i,\boldsymbol{\theta}_{-i},\boldsymbol{\lambda}) = \mathbb{E}_{\boldsymbol{\xi}_i \sim \mathcal{D}_i(\boldsymbol{\delta})} J_i\left(\boldsymbol{\xi}_i;\boldsymbol{\theta}_i,\boldsymbol{\theta}_{-i}\right) + \left\langle \boldsymbol{\lambda},\boldsymbol{g}_i(\boldsymbol{\theta}_i) + \sum_{j \neq i} \boldsymbol{g}_j\left(\boldsymbol{\theta}_j\right) \right\rangle,$$
+---Page Break---
+Algorithm 1 Decentralized Stochastic Primal-Dual Algorithm: The Procedures at Player i, ∀i ∈[n]:
 
-where  $\lambda \in \mathbb{R}^m_+$  is the dual variable. Denote by  $\nabla g_i(\cdot)$  the Jacobian matrix of  $g_i(\cdot)$ . From the primal-dual theory (Boyd and Vandenberghe, 2004; Facchinei and Pang, 2010), for any  $\gamma > 0$ , there exists a bounded Lagrangian multiplier  $\lambda^{\text{pse}}$  such that the following condition holds:
+1: Initialize θ1
+i ∈Ξi arbitrarily. Set λ1
+i = 0 and bθ
+1
+ih = 0 for all h ̸= i.
+2: for t = 1 to T do
+3:
+Exchange θt
+i, bθ
+t
+i, and λt
+i with all neighbors;
 
-$$\begin{split} & \boldsymbol{\theta}_{i}^{\mathrm{pse}} = & P_{\boldsymbol{\Omega}_{i}} \left[ \boldsymbol{\theta}_{i}^{\mathrm{pse}} - \gamma \left( G_{\boldsymbol{\theta}^{\mathrm{pse}}}^{(i)} \left( \boldsymbol{\theta}^{\mathrm{pse}}, \boldsymbol{\lambda}^{\mathrm{pse}} \right) + \gamma \nabla \boldsymbol{g}_{i} (\boldsymbol{\theta}_{i}^{\mathrm{pse}})^{\top} \boldsymbol{\lambda}^{\mathrm{pse}} \right) \right], \quad \forall i \in [n], \\ & \boldsymbol{\lambda}^{\mathrm{pse}} = \left[ \boldsymbol{\lambda}^{\mathrm{pse}} + \gamma \left( \boldsymbol{g}_{i} (\boldsymbol{\theta}_{i}^{\mathrm{pse}}) + \sum_{j \neq i} \boldsymbol{g}_{j} \left( \boldsymbol{\theta}_{j}^{\mathrm{pse}} \right) \right) \right]_{+}, \end{split}$$
+4:
+Update the estimate bθ
+t
+ih for all h ̸= i by: bθ
+t+1
+ih
+= P
 
-where  $\gamma$  is a control parameter. Thus, given  $\boldsymbol{\theta}_{-i}^{\mathrm{pse}}$  and under  $\boldsymbol{\xi}_i \sim \mathcal{D}_i(\boldsymbol{\theta}^{\mathrm{pse}})$ ,  $(\boldsymbol{\theta}_i^{\mathrm{pse}}, \boldsymbol{\lambda}^{\mathrm{pse}})$  is a saddle point of the Lagrangian  $\mathcal{L}^{(i)}_{\boldsymbol{\theta}^{\mathrm{pse}}}(\boldsymbol{\theta}_i, \boldsymbol{\theta}^{\mathrm{pse}}_{-i}, \boldsymbol{\lambda})$  for any  $i \in [n]$ . The joint saddle point  $(\boldsymbol{\theta}^{\mathrm{pse}}, \boldsymbol{\lambda}^{\mathrm{pse}})$  achieve the PSE of the game (1) under strong duality (Boyd and Vandenberghe, 2004).
+k̸=h aikbθ
+t
+kh + aihθt
+h;
 
-In the decentralized noncooperative game (1), each player can only communicate with its neighbors. We use  $\mathcal{G}(\mathbf{A})$  to denote the communication graph of the network, where  $\mathbf{A}=(a_{ij})_{n\times n}$  represents a weight matrix. In  $\mathcal{G}(\mathbf{A})$ ,  $a_{ij} = a_{ji} > 0$  if there is a communication link between player i and play j, and  $a_{ij} = a_{ji} = 0$  otherwise. Let  $\mathcal{N}_i$  be the set containing player i and all its neighbors such that  $j \in \mathcal{N}_i$  if  $a_{ij} > 0$ . We assume that the communication graph  $\mathcal{G}(\mathbf{A})$  is connected and the weight matrix **A** is doubly stochastic.
+5:
+Deploy the model θt
+i and sample ξt
+i ∼Di(θt
+i, θt
+−i);
 
-To find the saddle point  $(\theta^{\rm pse}, \lambda^{\rm pse})$ , we develop a decentralized stochastic primal-dual algorithm, as presented in Algorithm 1. The basic idea of Algorithm 1 is to perform gradient update on the primal variables  $\theta_i$  for all  $i \in [n]$  and the dual variable  $\lambda$ . In the decentralized noncooperative game, each player  $i \in [n]$  only observes information from its neighbors. However, its private cost funtion  $J_i(\boldsymbol{\xi}_i;\boldsymbol{\theta}_i,\boldsymbol{\theta}_{-i})$  involves all players' strategies. To solve this problem, we let each player i store an estimate for the strategies of all the other players, denoted by  $\theta_{ih}$ , for all  $h \neq i$ . Define a vector  $\theta_i$ that concatenates all the estimates  $\hat{\theta}_{ih}$ . In each iteration t, neighbors exchange strategy  $\theta_i^t$ , estimate  $\widehat{\bm{\theta}}_i^t$ , and dual varible  $\bm{\lambda}_i^t$  with each other. Then, each player i updates the estimates  $\widehat{\bm{\theta}}_{ih}$ , for all  $h \neq i$ by weighted average in Step 4. The primal variable  $\theta_i^t$  is updated by gradient descent by Step 6, and the dual variable  $\lambda_i^t$  is updated by gradient ascent by Step 7. The coefficient  $\gamma_t$  is the stepsize at the tth iteration for all  $t \in [T]$ .
+6:
+Update the primal variable by: θt+1
+i
+= PΩi
+h
+θt
+i −γt
+
+∇θiJi
+
+ξt
+i; θt
+i, bθ
+t
+i
+
++ γt∇gi(θt
+i)⊤λt
+i
+i
+;
 
-#### 4.2 Performance Analysis
+7:
+Update the dual variable by: λt+1
+i
+=
+h 
+1 −γ2
+t
+ P
+j∈Ni aijλt
+j + γtgi
+ 
+θt
+i
+i
 
-Before analyzing the performance of Algorithm 1, we define the performance metrics adopted in this paper. The first metric is performative regret. For any player  $i \in [n]$ , its performative regret over T iterations is defined as
++.
 
-$$\mathcal{R}_{i}(T) := \sum_{t=1}^{T} \left( \mathbb{E}_{\boldsymbol{\xi}_{i} \sim \mathcal{D}_{i}(\boldsymbol{\theta}^{\text{pse}})} J_{i}\left(\boldsymbol{\xi}_{i}; \boldsymbol{\theta}_{i}^{t}, \boldsymbol{\theta}_{-i}^{\text{pse}}\right) - \text{PR}_{i}\left(\boldsymbol{\theta}^{\text{pse}}\right) \right).$$
+8: end for
 
-The regret  $\mathcal{R}_i(T)$  measures the suboptimality of the sequence of decisions  $\{\boldsymbol{\theta}_i^1,\cdots,\boldsymbol{\theta}_i^T\}$  taken by play i relative to  $\boldsymbol{\theta}_i^{\mathrm{pse}}$ . Besides, since the decisions of all players are subject to constraints, another performance metric of constraint violation, denoted by  $\mathcal{R}_g(T)$ , is required, defined as
+4
+Computation of the PSE
 
-$$\mathcal{R}_g(T) = \left\| \left[ \sum_{t=1}^T \sum_{i=1}^n g_i \left( \boldsymbol{\theta}_i^t \right) \right]_+ \right\|_2$$
+Although RRM theoretically has the capability to ﬁnd a PSE point, how to perform risk minimization
+at its each update remains unknown. Moreover, RRM requires the computation of an NE for each
+deployment, which is computationally intensive. In this section, we present a decentralized stochastic
+primal-dual algorithm for efﬁciently computing the PSE of the game (1). Theoretical analysis is also
+provided on the convergence of the proposed algorithm.
 
-Any online or learning algorithm is regarded as "good" if both the time-average regret and the time-average constraint violation are sublinear, i.e.,  $\lim_{T\to\infty}\mathcal{R}_i(T)/T\leq o(1)$  for any  $i\in[n]$  and  $\lim_{T\to\infty}\mathcal{R}_q(T)/T\leq o(1)$ .
+4.1
+Algorithm Development
 
-For analysis, we make the following assumption on the variance of the stochastic gradient  $\nabla_{\theta_i} J_i(\xi_i; \delta)$ ,  $\forall i \in [n]$ .
+For each player i ∈[n], deﬁne a regularized Lagrangian as
 
-<span id="page-7-0"></span>**Assumption 4.1.** The stochastic gradient  $\nabla_{\boldsymbol{\delta}_{i}}J_{i}\left(\boldsymbol{\xi}_{i};\boldsymbol{\delta}_{i},\boldsymbol{\delta}_{-i}\right)$  is unbiased that  $\mathbb{E}_{\boldsymbol{\xi}_{i}\sim\mathcal{D}_{i}\left(\boldsymbol{\theta}\right)}\nabla_{\boldsymbol{\delta}_{i}}J_{i}\left(\boldsymbol{\xi}_{i};\boldsymbol{\delta}_{i},\boldsymbol{\delta}_{-i}\right)=G_{\boldsymbol{\theta}}^{(i)}\left(\boldsymbol{\delta}_{i},\boldsymbol{\delta}_{-i}\right)$  and there exist constants  $\sigma_{0},\sigma_{1}\geq0$  such that  $\sum_{i=1}^{n}\mathbb{E}_{\boldsymbol{\xi}_{i}\sim\mathcal{D}_{i}\left(\boldsymbol{\theta}\right)}\left\|\nabla_{\boldsymbol{\delta}_{i}}J_{i}\left(\boldsymbol{\xi}_{i};\boldsymbol{\delta}_{i},\boldsymbol{\delta}_{-i}\right)-G_{\boldsymbol{\theta}}^{(i)}\left(\boldsymbol{\delta}_{i},\boldsymbol{\delta}_{-i}\right)\right\|_{2}^{2}\leq\sigma_{0}^{2}+\sigma_{1}^{2}\left\|\boldsymbol{\theta}-\boldsymbol{\theta}^{\mathrm{pse}}\right\|_{2}^{2},\forall\boldsymbol{\theta},\boldsymbol{\delta}\in\Omega.$ 
+L(i)
+δ (θi, θ−i, λ) = Eξi∼Di(δ)Ji (ξi; θi, θ−i) +
+D
+λ, gi(θi) + P
 
-<span id="page-7-1"></span>**Theorem 4.2.** Define  $\widetilde{\mu} := \mu - \sum_{i=1}^n L_i \varepsilon_i \max_{j \in [n]} \sqrt{p_{ij}}$  and  $\nu := 3\left(\sigma_1^2 + 3\sum_{i=1}^n L_i^2\left(1 + \varepsilon_i^2 \max_{j \in [n]} p_{ij}\right)\right)$ . Suppose that Assumptions 2.1-2.5 and 4.1 hold and  $\widetilde{\mu} > 0$ . By Algorithm 1, if the stepsize satisfies  $\sup_{t \in [T]} \gamma_t \leq \frac{\widetilde{\mu}}{\nu}$ , then, the performative regret of the game (1) is bounded by
+j̸=i gj (θj)
+E
+,
 
-$$\mathcal{R}_i(T) \leq \mathcal{O}\left(\sqrt{\frac{T}{\widetilde{\mu}}\left(\frac{1}{\gamma_T} + \sum_{t=1}^T \gamma_t\right)}\right), \forall i \in [n].$$
+where λ ∈Rm
++ is the dual variable. Denote by ∇gi(·) the Jacobian matrix of gi(·). From the
+primal-dual theory (Boyd and Vandenberghe, 2004; Facchinei and Pang, 2010), for any γ > 0, there
+exists a bounded Lagrangian multiplier λpse such that the following condition holds:
+
+θpse
+i
+=PΩi
+h
+θpse
+i
+−γ
+
+G(i)
+θpse (θpse, λpse) + γ∇gi(θpse
+i
+)⊤λpsei
+,
+∀i ∈[n],
+
+λpse =
+h
+λpse + γ
+
+gi(θpse
+i
+) + P
+
+j̸=i gj
+ 
+θpse
+j
+i
+
++ ,
+
+where γ is a control parameter. Thus, given θpse
+−i and under ξi ∼Di(θpse), (θpse
+i
+, λpse) is a saddle
+
+point of the Lagrangian L(i)
+θpse(θi, θpse
+−i , λ) for any i ∈[n]. The joint saddle point (θpse, λpse) achieve
+the PSE of the game (1) under strong duality (Boyd and Vandenberghe, 2004).
+
+In the decentralized noncooperative game (1), each player can only communicate with its neighbors.
+We use G(A) to denote the communication graph of the network, where A = (aij)n×n represents a
+weight matrix. In G(A), aij = aji > 0 if there is a communication link between player i and play j,
+and aij = aji = 0 otherwise. Let Ni be the set containing player i and all its neighbors such that
+j ∈Ni if aij > 0. We assume that the communication graph G(A) is connected and the weight
+matrix A is doubly stochastic.
+
+To ﬁnd the saddle point (θpse, λpse), we develop a decentralized stochastic primal-dual algorithm,
+as presented in Algorithm 1. The basic idea of Algorithm 1 is to perform gradient update on the
+primal variables θi for all i ∈[n] and the dual variable λ. In the decentralized noncooperative game,
+each player i ∈[n] only observes information from its neighbors. However, its private cost funtion
+Ji(ξi; θi, θ−i) involves all players’ strategies. To solve this problem, we let each player i store an
+estimate for the strategies of all the other players, denoted by bθih, for all h ̸= i. Deﬁne a vector bθi
+that concatenates all the estimates bθih. In each iteration t, neighbors exchange strategy θt
+i, estimate
+bθ
+t
+i, and dual varible λt
+i with each other. Then, each player i updates the estimates bθih, for all h ̸= i
+by weighted average in Step 4. The primal variable θt
+i is updated by gradient descent by Step 6, and
+the dual variable λt
+i is updated by gradient ascent by Step 7. The coefﬁcient γt is the stepsize at the
+tth iteration for all t ∈[T].
+
+7
+
+
+---Page Break---
+4.2
+Performance Analysis
+
+Before analyzing the performance of Algorithm 1, we deﬁne the performance metrics adopted in this
+paper. The ﬁrst metric is performative regret. For any player i ∈[n], its performative regret over T
+iterations is deﬁned as
+
+Ri(T):=PT
+t=1
+ 
+Eξi∼Di(θpse)Ji
+ 
+ξi; θt
+i, θpse
+−i
+
+−PRi (θpse)
+
+.
+
+The regret Ri(T) measures the suboptimality of the sequence of decisions {θ1
+i , · · · , θT
+i } taken by
+play i relative to θpse
+i
+. Besides, since the decisions of all players are subject to constraints, another
+performance metric of constraint violation, denoted by Rg(T), is required, deﬁned as
+
+Rg(T) =
+
+hPT
+t=1
+Pn
+i=1 gi
+ 
+θt
+i
+i
+
++
+
+
+2
+.
+
+Any online or learning algorithm is regarded as “good” if both the time-average regret and the
+time-average constraint violation are sublinear, i.e., limT →∞Ri(T)/T ≤o(1) for any i ∈[n] and
+limT →∞Rg(T)/T ≤o(1).
+
+For analysis, we make the following assumption on the variance of the stochastic gradient
+∇θiJi (ξi; δ), ∀i ∈[n].
+Assumption
+4.1.
+The
+stochastic
+gradient
+∇δiJi (ξi; δi, δ−i)
+is
+unbiased
+that
+Eξi∼Di(θ)∇δiJi (ξi; δi, δ−i)
+=
+G(i)
+θ (δi, δ−i) and there exist constants σ0, σ1
+≥
+0 such
+
+that Pn
+i=1 Eξi∼Di(θ)
+∇δiJi (ξi; δi, δ−i) −G(i)
+θ (δi, δ−i)
+
+2
+
+2 ≤σ2
+0 + σ2
+1 ∥θ −θpse∥2
+2 , ∀θ, δ ∈Ω.
+
+Theorem
+4.2.
+Deﬁne
+eµ
+:=
+µ
+−
+Pn
+i=1 Liεi maxj∈[n] √pij
+and
+ν
+:=
+3
+ 
+σ2
+1 + 3 Pn
+i=1 L2
+i
+ 
+1 + ε2
+i maxj∈[n] pij
+
+.
+Suppose that Assumptions 2.1-2.5 and 4.1 hold
+and eµ > 0. By Algorithm 1, if the stepsize satisﬁes supt∈[T ] γt ≤eµ
+
+ν , then, the performative regret of
+the game (1) is bounded by
+
+Ri(T) ≤O
+r
+
+T
+
+eµ
+
+1
+γT + PT
+t=1 γt
+
+, ∀i ∈[n].
 
 Further, the constraint violation is bounded by
 
-$$\mathcal{R}_g(T) \leq \mathcal{O}\left(\frac{1}{\gamma_T} \sqrt{\left(\frac{1}{\gamma_T} + \sum_{t=1}^T \gamma_t\right) \left(1 + \sum_{t=1}^T \gamma_t^2\right)}\right).$$
+Rg(T) ≤O
+
+1
+γT
 
-For a sequence of diminishing stepsize  $\gamma_t = \tau_1^{\eta}(\tau_2 t + \tau_1)^{-\eta}$ , where  $\tau_1, \tau_2 > 0$  and  $0 < \eta < 1$ , we have that: 1)  $\sum_{t=1}^T \gamma_t \leq \mathcal{O}\left(T^{1-\eta}\right)$ ; 2)  $\sum_{t=1}^T \gamma^2(t) \leq \mathcal{O}\left(T^{1-2\eta}\right)$ . Plugging the above results into Theorem 4.2 yields
+r
+1
+γT + PT
+t=1 γt
+ 
+1 + PT
+t=1 γ2
+t
+
+.
 
-$$\mathcal{R}_i(T) \leq \mathcal{O}\left(T^{\frac{1+\eta}{2}} + T^{1-\frac{\eta}{2}}\right), i \in [n] \quad \text{and} \quad \mathcal{R}_g(T) \leq \mathcal{O}\left(T^{\frac{3}{2}\eta} + T^{\frac{1+\eta}{2}} + T^{1-\frac{\eta}{2}}\right).$$
+For a sequence of diminishing stepsize γt = τ η
+1 (τ2t + τ1)−η, where τ1, τ2 > 0 and 0 < η < 1, we
+have that: 1) PT
+t=1 γt ≤O
+ 
+T 1−η
+; 2) PT
+t=1 γ2(t) ≤O
+ 
+T 1−2η
+. Plugging the above results into
+Theorem 4.2 yields
 
-Based on the above two inequalities, the best choice of  $\eta$  is  $\frac{1}{2}$  such that  $\mathcal{R}_i(T) \leq \mathcal{O}(T^{\frac{3}{4}}), \forall i \in [n]$  and  $\mathcal{R}_g(T) \leq \mathcal{O}(T^{\frac{3}{4}})$ . This convergence speed matches that of the decentralized noncooperative game without performativity (Lu et al., 2020).
+Ri(T) ≤O
+
+T
+1+η
 
-The proof of Theorem 4.2 is provided in Appendix E. According to Theorem 4.2, the performative effect reduces the convergence rate by amplifying the coefficient  $\frac{1}{\widetilde{\mu}}$  in the regret bounds. Specifically, as the sensitivity parameters  $\varepsilon_i$  increase, the coefficient  $\widetilde{\mu}$  decreases, leading to a slower convergence rate of  $\mathcal{R}_i(T)$  for all  $i \in [n]$ . This occurs because a larger  $\varepsilon_i$  indicates a stronger performative influence, which more significantly impacts the algorithm's convergence. Nevertheless, the performative effect does not degrade the convergence order of Algorithm 1 compared to the case without performativity (Lu et al., 2020).
+2
++ T 1−η
 
-#### 5 Numerical Experiments
+2
+
+, i ∈[n]
+and
+Rg(T) ≤O
+
+T
+3
+2 η + T
+1+η
 
-In this section, we evaluate the effectiveness of our algorithm and theoretical results by conducting numerical experiments on a networked Cournot game (Abolhassani et al., 2014), which is a foundational model in economic theory (Allaz and Vila, 1993) for analyzing oligopolistic competitions. We
+2
++ T 1−η
 
-<span id="page-8-0"></span>Figure 1: Convergence of time-average regrets and time-average constraint violations.
+2
+
+.
 
-<span id="page-8-1"></span>Figure 2: (a). Normalized distance between  $\theta^t$  and  $\theta^{ne}$ . (b). Total revenue at PSE and NE.
+Based on the above two inequalities, the best choice of η is 1
 
-consider a networked Cournot game with five firms selling a single commodity across three markets. Each firm aims to maximize its profit by determining the quantities it serves in all markets. The total accommodated quantity in each market is limited by its market capacity. The simulation details and additional numerical results are presented in Appendix F.1. We also provide an additional experiment on a ride-share market in Appendix F.2.
+2 such that Ri(T) ≤O(T
+3
+4 ), ∀i ∈[n]
+and Rg(T) ≤O(T
+3
+4 ). This convergence speed matches that of the decentralized noncooperative
+game without performativity (Lu et al., 2020).
 
-Fig. 1 illustrates the convergence of the time-average regrets of five firms, denoted by  $\mathcal{R}_i(t)/t$ ,  $\forall i \in [5]$ , and the convergence of the time-average constraint violations of three markets, denoted by  $\frac{1}{t} \sum_{t'=1}^t \sum_{i=1}^n g_{ij}(\boldsymbol{\theta}_i^{t'})$ ,  $\forall j \in [3]$ . The results demonstrate that both  $\mathcal{R}_i(t)/t$  and  $\frac{1}{t} \sum_{t'=1}^t \sum_{i=1}^n g_{ij}(\boldsymbol{\theta}_i^{t'})$  approach zero as the iterations increase. This verifies the sublinear convergence of the regrets and constraint violations in Theorem 4.2.
+The proof of Theorem 4.2 is provided in Appendix E. According to Theorem 4.2, the performative
+effect reduces the convergence rate by amplifying the coefﬁcient 1
 
-Fig. 2 (a) compares the normalized distance between  $\boldsymbol{\theta}^t$ , generated by Algorithm 1, and the NE point  $\boldsymbol{\theta}^{\mathrm{ne}}$ , denoted as  $\|\boldsymbol{\theta}^t - \boldsymbol{\theta}^{\mathrm{ne}}\|_2 / \|\boldsymbol{\theta}^t\|_2$ . The NE point is computed based on perfect knowledge of  $\{\mathcal{D}_i\}_{i\in[n]}$ . We consider three different performative strengths:  $\varepsilon=0.2,\ 0.4,\$ and 0.6. It is observed that  $\|\boldsymbol{\theta}^t - \boldsymbol{\theta}^{\mathrm{ne}}\|_2 / \|\boldsymbol{\theta}^t\|_2$  stabilizes at values approximately equal to or smaller than  $10^{-1}$  with iterations, varifying the effectiveness of Algorithm 1. Additionally, a larger performative strength leads to a wider normalized distance between the convergent point of  $\boldsymbol{\theta}^t$  and  $\boldsymbol{\theta}^{\mathrm{ne}}$ . In Fig. 2 (b), we compare the total revenues, denoted by  $-\sum_{i=1}^5 \mathrm{PR}_i(\boldsymbol{\theta}^t)$  under the same three  $\varepsilon$  settings. We consider two scenarios: 1). "pse", where  $\boldsymbol{\theta}^t$  is generated by Algorithm 1; 2). "ne", where  $\boldsymbol{\theta}^t$  is generated by performing the same procedures as Algorithm 1 but with perfect information on the distributions  $\{\mathcal{D}_i(\boldsymbol{\theta})\}_{i\in[n]}$ . The result demonstrates the close performance of the "pse" approach and the "ne" approach. More numerical results can be found in Appendix F.
+eµ in the regret bounds. Speciﬁcally,
+as the sensitivity parameters εi increase, the coefﬁcient eµ decreases, leading to a slower convergence
+rate of Ri(T) for all i ∈[n]. This occurs because a larger εi indicates a stronger performative
+inﬂuence, which more signiﬁcantly impacts the algorithm’s convergence. Nevertheless, the perfor-
+mative effect does not degrade the convergence order of Algorithm 1 compared to the case without
+performativity (Lu et al., 2020).
 
-Conclusions: We have studied the performative phenomenon in a decentralized noncooperative game where selfish players seek to maximize their individual profits while adhering to coupled inequality constraints. We have derived sufficient conditions for the E&U of both PSE and NE and provided the first upper bound on the distance between these two equilibria. Furthermore, we have developed a decentralized stochastic primal-dual algorithm for efficiently computing of the PSE point. Theoretical analysis has demonstrated the same order of convergence speed of our algorithm as the case without performativity. Finally, numerical simulations have been provided to verify the effectiveness of our algorithm and theoretical results.
+5
+Numerical Experiments
 
-# References
+In this section, we evaluate the effectiveness of our algorithm and theoretical results by conducting
+numerical experiments on a networked Cournot game (Abolhassani et al., 2014), which is a founda-
+tional model in economic theory (Allaz and Vila, 1993) for analyzing oligopolistic competitions. We
 
-- <span id="page-9-18"></span>Melika Abolhassani, Mohammad Hossein Bateni, MohammadTaghi Hajiaghayi, Hamid Mahini, and Anshul Sawant. 2014. Network cournot competition. In *International Conference on Web and Internet Economics*. Springer, 15–29.
-- <span id="page-9-19"></span>Blaise Allaz and Jean-Luc Vila. 1993. Cournot competition, forward markets and efficiency. *Journal of Economic theory* 59, 1 (1993), 1–16.
-- <span id="page-9-15"></span>Dimitri P Bertsekas. 2014. *Constrained optimization and Lagrange multiplier methods*. Academic press.
-- <span id="page-9-16"></span>Stephen P Boyd and Lieven Vandenberghe. 2004. *Convex optimization*. Cambridge university press.
-- <span id="page-9-1"></span>Alex Chan, Ahmed Alaa, Zhaozhi Qian, and Mihaela Van Der Schaar. 2020. Unlabelled data improves bayesian uncertainty calibration under covariate shift. In *International conference on machine learning*. PMLR, 1392–1402.
-- <span id="page-9-11"></span>James Cust and Steven Poelhekke. 2015. The local economic impacts of natural resource extraction. *Annu. Rev. Resour. Econ.* 7, 1 (2015), 251–268.
-- <span id="page-9-3"></span>Sarah Dean, Mihaela Curmei, Lillian J. Ratliff, Jamie Morgenstern, and Maryam Fazel. 2023. Emergent segmentation from participation dynamics and multi-learner retraining. *arXiv preprint arXiv:2206.02667* (2023).
-- <span id="page-9-2"></span>Jinshuo Dong, Aaron Roth, Zachary Schutzman, Bo Waggoner, and Zhiwei Steven Wu. 2018. Strategic classification from revealed preferences. In *Proceedings of the 2018 ACM Conference on Economics and Computation*. 55–70.
-- <span id="page-9-5"></span>Dmitriy Drusvyatskiy and Lin Xiao. 2023. Stochastic optimization with decision-dependent distributions. *Mathematics of Operations Research* 48, 2 (2023), 954–998.
-- <span id="page-9-0"></span>Issam El Naqa and Martin J Murphy. 2015. *What is machine learning?* Springer.
-- <span id="page-9-14"></span>Francisco Facchinei and Jong-Shi Pang. 2003. *Finite-dimensional variational inequalities and complementarity problems*. Springer.
-- <span id="page-9-17"></span>Francisco Facchinei and Jong-Shi Pang. 2010. Nash equilibria: the variational approach. *Convex optimization in signal processing and communications* (2010), 443.
-- <span id="page-9-10"></span>Bassam Fattouh and Lavan Mahadeva. 2014. Causes and implications of shifts in financial participation in commodity markets. *Journal of Futures Markets* 34, 8 (2014), 757–787.
-- <span id="page-9-22"></span>Yiguang Hong, Jiangping Hu, and Linxin Gao. 2006. Tracking control for multi-agent consensus with an active leader and variable topology. *Automatica* 42, 7 (2006), 1177–1182.
-- <span id="page-9-21"></span>Roger A Horn and Charles R Johnson. 2012. *Matrix analysis*. Cambridge university press.
-- <span id="page-9-20"></span>Zachary Izzo, Lexing Ying, and James Zou. 2021. How to learn when data reacts to your model: performative gradient descent. In *International Conference on Machine Learning*. PMLR, 4641–4650.
-- <span id="page-9-8"></span>Meena Jagadeesan, Tijana Zrnic, and Celestine Mendler-Dünner. 2022. Regret minimization with performative feedback. In *International Conference on Machine Learning*. PMLR, 9760–9785.
-- <span id="page-9-13"></span>Qiang Li, Chung-Yiu Yau, and Hoi-To Wai. 2022. Multi-agent performative prediction with greedy deployment and consensus seeking agents. *Advances in Neural Information Processing Systems* 35 (2022), 38449–38460.
-- <span id="page-9-4"></span>Jie Lu, Anjin Liu, Fan Dong, Feng Gu, Joao Gama, and Guangquan Zhang. 2018. Learning under concept drift: A review. *IEEE transactions on knowledge and data engineering* 31, 12 (2018), 2346–2363.
-- <span id="page-9-12"></span>Kaihong Lu, Guangqi Li, and Long Wang. 2020. Online distributed algorithms for seeking generalized Nash equilibria in dynamic environments. *IEEE Trans. Automat. Control* 66, 5 (2020), 2289–2296.
-- <span id="page-9-9"></span>Songtao Lu. 2023. Bilevel optimization with coupled decision-dependent distributions. In *International Conference on Machine Learning*. PMLR, 22758–22789.
-- <span id="page-9-7"></span>Debmalya Mandal, Stelios Triantafyllou, and Goran Radanovic. 2023. Performative reinforcement learning. In *International Conference on Machine Learning*. PMLR, 23642–23680.
-- <span id="page-9-6"></span>John P Miller, Juan C Perdomo, and Tijana Zrnic. 2021. Outside the echo chamber: Optimizing the performative risk. In *International Conference on Machine Learning*. PMLR, 7710–7720.
+8
 
-- <span id="page-10-6"></span>Usue Mori, Alexander Mendiburu, Maite Álvarez, and Jose A Lozano. 2015. A review of travel time estimation and forecasting for advanced traveller information systems. *Transportmetrica A: Transport Science* 11, 2 (2015), 119–157.
-- <span id="page-10-7"></span>Amir Moshari, GR Yousefi, Akbar Ebrahimi, and Saeid Haghbin. 2010. Demand-side behavior in the smart grid environment. In *2010 IEEE PES Innovative Smart Grid Technologies Conference Europe (ISGT Europe)*. IEEE, 1–7.
-- <span id="page-10-8"></span>Adhyyan Narang, Evan Faulkner, Dmitriy Drusvyatskiy, Maryam Fazel, and Lillian J Ratliff. 2023. Multiplayer performative prediction: Learning in decision-dependent games. *Journal of Machine Learning Research* 24, 202 (2023), 1–56.
-- <span id="page-10-0"></span>Juan Perdomo, Tijana Zrnic, Celestine Mendler-Dünner, and Moritz Hardt. 2020. Performative prediction. In *Proceedings of the 37th International Conference on Machine Learning (ICML 2020)*. PMLR, 7599–7609.
-- <span id="page-10-4"></span>Georgios Piliouras and Fang-Yi Yu. 2023. Multi-agent performative prediction: From global stability and optimality to chaos. In *Proceedings of the 24th ACM Conference on Economics and Computation*. 1047– 1074.
-- <span id="page-10-1"></span>Joaquin Quinonero-Candela, Masashi Sugiyama, Anton Schwaighofer, and Neil D Lawrence. 2008. *Dataset shift in machine learning*. Mit Press.
-- <span id="page-10-13"></span>Jia-Wei Shan, Peng Zhao, and Zhi-Hua Zhou. 2023. Beyond Performative Prediction: Open-environment Learning with Presence of Corruptions. In *International Conference on Artificial Intelligence and Statistics*. PMLR, 7981–7998.
-- <span id="page-10-9"></span>Hal R Varian. 2009. Online ad auctions. *American Economic Review* 99, 2 (2009), 430–434.
-- <span id="page-10-10"></span>Xiaolu Wang, Chung-Yiu Yau, and Hoi To Wai. 2023. Network effects in performative prediction games. In *International Conference on Machine Learning*. PMLR, 36514–36540.
-- <span id="page-10-5"></span>Killian Wood, Gianluca Bianchin, and Emiliano Dall'Anese. 2021. Online projected gradient descent for stochastic optimization with decision-dependent distributions. *IEEE Control Systems Letters* 6 (2021), 1646–1651.
-- <span id="page-10-3"></span>Ruihan Wu, Chuan Guo, Yi Su, and Kilian Q Weinberger. 2021. Online adaptation to label distribution shift. *Advances in Neural Information Processing Systems* 34 (2021), 11340–11351.
-- <span id="page-10-12"></span>Wenjing Yan and Xuanyu Cao. 2024a. Decentralized Multi-Task Online Convex Optimization Under Random Link Failures. *IEEE Transactions on Signal Processing* (2024).
-- <span id="page-10-11"></span>Wenjing Yan and Xuanyu Cao. 2024b. Zero-regret performative prediction under inequality constraints. *Advances in Neural Information Processing Systems* 36 (2024).
-- <span id="page-10-2"></span>Zhi-Hua Zhou. 2022. Open-environment machine learning. *National Science Review* 9, 8 (2022), nwac123.
 
-# <span id="page-11-0"></span>A Related Work
+---Page Break---
+Figure 1: Convergence of time-average regrets and time-average constraint violations.
 
-In recent years, the exploration of distribution shifts in machine learning systems has been extended beyond traditional exogenous shifts [\(Quinonero-Candela et al., 2008\)](#page-10-1), such as covariate [\(Chan](#page-9-1) [et al., 2020\)](#page-9-1), label [\(Wu et al., 2021\)](#page-10-3), and concept [\(Lu et al., 2018\)](#page-9-4) drifts, to include endogenous shifts resulting from strategic behaviors within the learning platforms themselves. [Perdomo et al.](#page-10-0) [\(2020\)](#page-10-0) introduced the framework of performative prediction, which captures the platform's strategic responses using decision-dependent distribution mappings. Following this seminal work, significant research effort has been dedicated to investigating the phenomenon of performativity in various scenarios. In particular, [\(Shan et al., 2023\)](#page-10-13) studied the endogenous distribution change in open environments, where data are obtained from a corrupted decision-dependent distribution. They proposed an effective algorithm with theoretical guarantees by decoupling the two sources of effects. [Lu](#page-9-9) [\(2023\)](#page-9-9) investigated the presence of performativity in bilevel optimization. They first established sufficient conditions for the existence of performatively stable solutions and then developed a stochastic algorithm to find the PS point. In [\(Mandal et al., 2023\)](#page-9-7), the authors examined the performative effect in a regularized reinforcement learning problem and showed that repeatedly optimizing this objective converges to a performatively stable policy under reasonable assumptions on the transition dynamics. It is demonstrated in [\(Drusvyatskiy and Xiao, 2023\)](#page-9-5) that typical gradientbased stochastic algorithms can be applied to find performative stable equilibria with a biased gradient oracle.
+Figure 2: (a). Normalized distance between θt and θne. (b). Total revenue at PSE and NE.
 
-While most existing work focused on finding performative stable points, there are studies aimed at identifying the optimal solutions for performative prediction problems [\(Miller et al., 2021;](#page-9-6) [Izzo et al.,](#page-9-20) [2021;](#page-9-20) [Jagadeesan et al., 2022\)](#page-9-8). The optimality gap of performative stable points was first presented in [\(Perdomo et al., 2020\)](#page-10-0), where their bound is proportional to the strong convexity parameter and inversely proportional to the smoothness parameter of cost functions and the sensitivity parameter of the decision-dependent distributions. The primary challenges in computing optimal points in performative prediction problems lie in the unknown decision-dependent data distributions. To address this challenge, a commonly used method is to make parametric assumptions on the data distributions and then design algorithms to estimate them. For instance, [\(Miller et al., 2021\)](#page-9-6) proposed a two-stage algorithm to find the performative optima for distribution maps in the location family. [Izzo](#page-9-20) [et al.](#page-9-20) [\(2021\)](#page-9-20) proposed a PerfGD algorithm by exploiting the exponential structure of the underlying distribution maps.
+consider a networked Cournot game with ﬁve ﬁrms selling a single commodity across three markets.
+Each ﬁrm aims to maximize its proﬁt by determining the quantities it serves in all markets. The total
+accommodated quantity in each market is limited by its market capacity. The simulation details and
+additional numerical results are presented in Appendix F.1. We also provide an additional experiment
+on a ride-share market in Appendix F.2.
 
-Among the numerous existing studies, [\(Narang et al., 2023\)](#page-10-8) and [\(Wang et al., 2023\)](#page-10-10) are, at a conceptual level, the closest papers to our own since they have considered performative behaviors in games. On a technical level, however, these two works are quite distinct from ours since we study completely different problem settings. One defining distinction is that, in our model, the collective strategies of all players must adhere to the learning system's constraints, whereas both [\(Narang](#page-10-8) [et al., 2023\)](#page-10-8) and [\(Wang et al., 2023\)](#page-10-10) are unconstrained. Constraints are unavoidable in certain game scenarios, such as safety and cost constraints in transportation, relevance and diversity constraints in advertising, and risk tolerance and portfolio constraints in financial trading. The constrained problem in our work results in a fundamentally different algorithm design and convergence analysis from these two papers. Our work utilizes the primal-dual technique and necessitates consensus, whereas their approach only requires local stochastic gradient descent. Additionally, there are distinctions in the problem settings. In [\(Wang et al., 2023\)](#page-10-10), the private cost function of each player is structured in a specific form, involving a local cost depending solely on its own strategy and a regularizer quantifying the similarity of strategies among neighbors. In contrast, we consider a mathematically richer setting where each player's private cost function depends on the strategies of all players in the game, thus encompassing the model in [\(Wang et al., 2023\)](#page-10-10). Moreover, our algorithm design takes into account the practical implementation where players can only communicate with their neighbors, while [\(Narang et al., 2023\)](#page-10-8) assumes that the strategies of all players are publicly accessible across the entire network. This more practical setting poses challenges for each player in observing the entire network. More importantly, although [\(Narang et al., 2023\)](#page-10-8) and [\(Wang et al., 2023\)](#page-10-10) demonstrated the existence and uniqueness of the PSE and NE for their respective game settings, neither of them offers insights into the distance between these two equilibria. This paper makes a significant contribution by presenting the first upper bound on this distance.
+Fig. 1 illustrates the convergence of the time-average regrets of ﬁve ﬁrms, denoted by Ri(t)/t,
+∀i ∈[5], and the convergence of the time-average constraint violations of three markets, de-
+noted by
+1
+t
+Pt
+t′=1
+Pn
+i=1 gij(θt′
+i ), ∀j ∈[3].
+The results demonstrate that both Ri(t)/t and
 
-Furthermore, there are works on decentralized optimization of multiagent performative prediction [\(Li et al., 2022;](#page-9-13) [Piliouras and Yu, 2023\)](#page-10-4). Specifically, [\(Li et al., 2022\)](#page-9-13) focused on decentralized
+1
+t
+Pt
+t′=1
+Pn
+i=1 gij(θt′
+i ) approach zero as the iterations increase. This veriﬁes the sublinear con-
+vergence of the regrets and constraint violations in Theorem 4.2.
 
-optimization with consensus-seeking agents, where the data distribution of each agent depends only on its own decision. Although (Piliouras and Yu, 2023) considers multiagent, their study is in a centralized fashion and their data distributions are restricted to location-scale families. Lastly, it is worth mentioning that one paper (Yan and Cao, 2024b) has considered constrained optimization in the context of performative prediction. However, (Yan and Cao, 2024b) studied the single-agent case, while this work considers a more complex model with decentralized noncooperative players and partially observed information about competitors' strategies. Additionally, this paper contributes to the evaluation of equilibria, whereas such analysis has not been involved in (Yan and Cao, 2024b).
+Fig. 2 (a) compares the normalized distance between θt, generated by Algorithm 1, and the NE
+point θne, denoted as ∥θt −θne∥2/∥θt∥2. The NE point is computed based on perfect knowledge
+of {Di}i∈[n]. We consider three different performative strengths: ε = 0.2, 0.4, and 0.6. It is
+observed that ∥θt −θne∥2/∥θt∥2 stabilizes at values approximately equal to or smaller than 10−1
+with iterations, varifying the effectiveness of Algorithm 1. Additionally, a larger performative strength
+leads to a wider normalized distance between the convergent point of θt and θne. In Fig. 2 (b),
+we compare the total revenues, denoted by −P5
+i=1 PRi(θt) under the same three ε settings. We
+consider two scenarios: 1). “pse”, where θt is generated by Algorithm 1; 2). “ne”, where θt is
+generated by performing the same procedures as Algorithm 1 but with perfect information on the
+distributions {Di(θ)}i∈[n]. The result demonstrates the close performance of the “pse” approach and
+the “ne” approach. More numerical results can be found in Appendix F.
 
-### <span id="page-12-0"></span>**B** Existence and Uniqueness of Performative Stable Equilibrium
+Conclusions: We have studied the performative phenomenon in a decentralized noncooperative game
+where selﬁsh players seek to maximize their individual proﬁts while adhering to coupled inequality
+constraints. We have derived sufﬁcient conditions for the E&U of both PSE and NE and provided the
+ﬁrst upper bound on the distance between these two equilibria. Furthermore, we have developed a
+decentralized stochastic primal-dual algorithm for efﬁciently computing of the PSE point. Theoretical
+analysis has demonstrated the same order of convergence speed of our algorithm as the case without
+performativity. Finally, numerical simulations have been provided to verify the effectiveness of our
+algorithm and theoretical results.
 
-From the definition of the mapping  $\mathcal{T}(\boldsymbol{\theta})$ , we have that
+9
 
-$$\boldsymbol{\theta}_i' = \mathcal{T}_i(\boldsymbol{\theta}) = \operatorname*{arg\,min}_{\boldsymbol{u}_i \in \boldsymbol{\Omega}_i} \quad \mathbb{E}_{\boldsymbol{\xi}_i \sim \mathcal{D}_i(\boldsymbol{\theta})} J_i\left(\boldsymbol{\xi}_i; \boldsymbol{u}_i, \boldsymbol{\theta}_{-i}'\right) \quad \text{s.t.} \quad \boldsymbol{g}_i(\boldsymbol{u}_i) + \sum_{j \neq i} \boldsymbol{g}_j\left(\boldsymbol{\theta}_j'\right) \leq \boldsymbol{0}, \quad \forall i \in [n],$$
 
-$$\boldsymbol{\delta}_{i}' = \mathcal{T}_{i}(\boldsymbol{\delta}) = \operatorname*{arg\,min}_{\boldsymbol{u}_{i} \in \boldsymbol{\Omega}_{i}} \quad \mathbb{E}_{\boldsymbol{\xi}_{i} \sim \mathcal{D}_{i}(\boldsymbol{\delta})} J_{i}\left(\boldsymbol{\xi}_{i}; \boldsymbol{u}_{i}, \boldsymbol{\delta}_{-i}'\right) \quad \text{s.t.} \quad \boldsymbol{g}_{i}(\boldsymbol{u}_{i}) + \sum_{j \neq i}^{S} \boldsymbol{g}_{j}\left(\boldsymbol{\delta}_{j}'\right) \leq \boldsymbol{0}, \quad \forall i \in [n].$$
+---Page Break---
+References
 
-Define  $\mathbb{E}_{\boldsymbol{\xi}_i \sim \mathcal{D}_i(\boldsymbol{\theta})} \nabla_{\boldsymbol{\theta}_i} J_i\left(\boldsymbol{\xi}_i; \boldsymbol{\theta}_i', \boldsymbol{\theta}_{-i}'\right) := G_{\boldsymbol{\theta}}^{(i)}(\boldsymbol{\theta}_i', \boldsymbol{\theta}_{-i}')$ . From the optimality condition of constrained optimization, we have
+Melika Abolhassani, Mohammad Hossein Bateni, MohammadTaghi Hajiaghayi, Hamid Mahini, and Anshul
+Sawant. 2014. Network cournot competition. In International Conference on Web and Internet Economics.
+Springer, 15–29.
 
-$$\left\langle G_{\boldsymbol{\theta}}^{(i)}\left(\boldsymbol{\theta}'\right), \boldsymbol{\theta}'_i - \boldsymbol{\delta}'_i \right\rangle \leq 0, \quad \forall i \in [n].$$
+Blaise Allaz and Jean-Luc Vila. 1993. Cournot competition, forward markets and efﬁciency. Journal of Economic
+theory 59, 1 (1993), 1–16.
 
-Define a vector  $G_{\theta}(\theta') := \operatorname{col}\left(G_{\theta}^{(1)}(\theta'), \cdots, G_{\theta}^{(n)}(\theta')\right)$  that concatenates all the  $G_{\theta}^{(i)}(\theta')$ ,  $i \in [n]$ . Then, we have
+Dimitri P Bertsekas. 2014. Constrained optimization and Lagrange multiplier methods. Academic press.
 
-<span id="page-12-1"></span>
-$$\langle G_{\boldsymbol{\theta}} \left( \boldsymbol{\theta}' \right), \boldsymbol{\theta}' - \boldsymbol{\delta}' \rangle \le 0.$$
- (A1)
+Stephen P Boyd and Lieven Vandenberghe. 2004. Convex optimization. Cambridge university press.
+
+Alex Chan, Ahmed Alaa, Zhaozhi Qian, and Mihaela Van Der Schaar. 2020. Unlabelled data improves bayesian
+uncertainty calibration under covariate shift. In International conference on machine learning. PMLR,
+1392–1402.
+
+James Cust and Steven Poelhekke. 2015. The local economic impacts of natural resource extraction. Annu. Rev.
+Resour. Econ. 7, 1 (2015), 251–268.
+
+Sarah Dean, Mihaela Curmei, Lillian J. Ratliff, Jamie Morgenstern, and Maryam Fazel. 2023. Emergent
+segmentation from participation dynamics and multi-learner retraining. arXiv preprint arXiv:2206.02667
+(2023).
+
+Jinshuo Dong, Aaron Roth, Zachary Schutzman, Bo Waggoner, and Zhiwei Steven Wu. 2018. Strategic
+classiﬁcation from revealed preferences. In Proceedings of the 2018 ACM Conference on Economics and
+Computation. 55–70.
+
+Dmitriy Drusvyatskiy and Lin Xiao. 2023. Stochastic optimization with decision-dependent distributions.
+Mathematics of Operations Research 48, 2 (2023), 954–998.
+
+Issam El Naqa and Martin J Murphy. 2015. What is machine learning? Springer.
+
+Francisco Facchinei and Jong-Shi Pang. 2003. Finite-dimensional variational inequalities and complementarity
+problems. Springer.
+
+Francisco Facchinei and Jong-Shi Pang. 2010. Nash equilibria: the variational approach. Convex optimization in
+signal processing and communications (2010), 443.
+
+Bassam Fattouh and Lavan Mahadeva. 2014. Causes and implications of shifts in ﬁnancial participation in
+commodity markets. Journal of Futures Markets 34, 8 (2014), 757–787.
+
+Yiguang Hong, Jiangping Hu, and Linxin Gao. 2006. Tracking control for multi-agent consensus with an active
+leader and variable topology. Automatica 42, 7 (2006), 1177–1182.
+
+Roger A Horn and Charles R Johnson. 2012. Matrix analysis. Cambridge university press.
+
+Zachary Izzo, Lexing Ying, and James Zou. 2021. How to learn when data reacts to your model: performative
+gradient descent. In International Conference on Machine Learning. PMLR, 4641–4650.
+
+Meena Jagadeesan, Tijana Zrnic, and Celestine Mendler-Dünner. 2022. Regret minimization with performative
+feedback. In International Conference on Machine Learning. PMLR, 9760–9785.
+
+Qiang Li, Chung-Yiu Yau, and Hoi-To Wai. 2022. Multi-agent performative prediction with greedy deployment
+and consensus seeking agents. Advances in Neural Information Processing Systems 35 (2022), 38449–38460.
+
+Jie Lu, Anjin Liu, Fan Dong, Feng Gu, Joao Gama, and Guangquan Zhang. 2018. Learning under concept drift:
+A review. IEEE transactions on knowledge and data engineering 31, 12 (2018), 2346–2363.
+
+Kaihong Lu, Guangqi Li, and Long Wang. 2020. Online distributed algorithms for seeking generalized Nash
+equilibria in dynamic environments. IEEE Trans. Automat. Control 66, 5 (2020), 2289–2296.
+
+Songtao Lu. 2023. Bilevel optimization with coupled decision-dependent distributions. In International Confer-
+ence on Machine Learning. PMLR, 22758–22789.
+
+Debmalya Mandal, Stelios Triantafyllou, and Goran Radanovic. 2023. Performative reinforcement learning. In
+International Conference on Machine Learning. PMLR, 23642–23680.
+
+John P Miller, Juan C Perdomo, and Tijana Zrnic. 2021. Outside the echo chamber: Optimizing the performative
+risk. In International Conference on Machine Learning. PMLR, 7710–7720.
+
+10
+
+
+---Page Break---
+Usue Mori, Alexander Mendiburu, Maite Álvarez, and Jose A Lozano. 2015. A review of travel time estimation
+and forecasting for advanced traveller information systems. Transportmetrica A: Transport Science 11, 2
+(2015), 119–157.
+
+Amir Moshari, GR Youseﬁ, Akbar Ebrahimi, and Saeid Haghbin. 2010. Demand-side behavior in the smart
+grid environment. In 2010 IEEE PES Innovative Smart Grid Technologies Conference Europe (ISGT Europe).
+IEEE, 1–7.
+
+Adhyyan Narang, Evan Faulkner, Dmitriy Drusvyatskiy, Maryam Fazel, and Lillian J Ratliff. 2023. Multiplayer
+performative prediction: Learning in decision-dependent games. Journal of Machine Learning Research 24,
+202 (2023), 1–56.
+
+Juan Perdomo, Tijana Zrnic, Celestine Mendler-Dünner, and Moritz Hardt. 2020. Performative prediction. In
+Proceedings of the 37th International Conference on Machine Learning (ICML 2020). PMLR, 7599–7609.
+
+Georgios Piliouras and Fang-Yi Yu. 2023. Multi-agent performative prediction: From global stability and
+optimality to chaos. In Proceedings of the 24th ACM Conference on Economics and Computation. 1047–
+1074.
+
+Joaquin Quinonero-Candela, Masashi Sugiyama, Anton Schwaighofer, and Neil D Lawrence. 2008. Dataset
+shift in machine learning. Mit Press.
+
+Jia-Wei Shan, Peng Zhao, and Zhi-Hua Zhou. 2023. Beyond Performative Prediction: Open-environment
+Learning with Presence of Corruptions. In International Conference on Artiﬁcial Intelligence and Statistics.
+PMLR, 7981–7998.
+
+Hal R Varian. 2009. Online ad auctions. American Economic Review 99, 2 (2009), 430–434.
+
+Xiaolu Wang, Chung-Yiu Yau, and Hoi To Wai. 2023. Network effects in performative prediction games. In
+International Conference on Machine Learning. PMLR, 36514–36540.
+
+Killian Wood, Gianluca Bianchin, and Emiliano Dall’Anese. 2021. Online projected gradient descent for
+stochastic optimization with decision-dependent distributions. IEEE Control Systems Letters 6 (2021),
+1646–1651.
+
+Ruihan Wu, Chuan Guo, Yi Su, and Kilian Q Weinberger. 2021. Online adaptation to label distribution shift.
+Advances in Neural Information Processing Systems 34 (2021), 11340–11351.
+
+Wenjing Yan and Xuanyu Cao. 2024a. Decentralized Multi-Task Online Convex Optimization Under Random
+Link Failures. IEEE Transactions on Signal Processing (2024).
+
+Wenjing Yan and Xuanyu Cao. 2024b. Zero-regret performative prediction under inequality constraints. Advances
+in Neural Information Processing Systems 36 (2024).
+
+Zhi-Hua Zhou. 2022. Open-environment machine learning. National Science Review 9, 8 (2022), nwac123.
+
+11
+
+
+---Page Break---
+A
+Related Work
+
+In recent years, the exploration of distribution shifts in machine learning systems has been extended
+beyond traditional exogenous shifts (Quinonero-Candela et al., 2008), such as covariate (Chan
+et al., 2020), label (Wu et al., 2021), and concept (Lu et al., 2018) drifts, to include endogenous
+shifts resulting from strategic behaviors within the learning platforms themselves. Perdomo et al.
+(2020) introduced the framework of performative prediction, which captures the platform’s strategic
+responses using decision-dependent distribution mappings. Following this seminal work, signiﬁcant
+research effort has been dedicated to investigating the phenomenon of performativity in various
+scenarios. In particular, (Shan et al., 2023) studied the endogenous distribution change in open
+environments, where data are obtained from a corrupted decision-dependent distribution. They
+proposed an effective algorithm with theoretical guarantees by decoupling the two sources of effects.
+Lu (2023) investigated the presence of performativity in bilevel optimization. They ﬁrst established
+sufﬁcient conditions for the existence of performatively stable solutions and then developed a
+stochastic algorithm to ﬁnd the PS point. In (Mandal et al., 2023), the authors examined the
+performative effect in a regularized reinforcement learning problem and showed that repeatedly
+optimizing this objective converges to a performatively stable policy under reasonable assumptions
+on the transition dynamics. It is demonstrated in (Drusvyatskiy and Xiao, 2023) that typical gradient-
+based stochastic algorithms can be applied to ﬁnd performative stable equilibria with a biased gradient
+oracle.
+
+While most existing work focused on ﬁnding performative stable points, there are studies aimed at
+identifying the optimal solutions for performative prediction problems (Miller et al., 2021; Izzo et al.,
+2021; Jagadeesan et al., 2022). The optimality gap of performative stable points was ﬁrst presented
+in (Perdomo et al., 2020), where their bound is proportional to the strong convexity parameter and
+inversely proportional to the smoothness parameter of cost functions and the sensitivity parameter
+of the decision-dependent distributions. The primary challenges in computing optimal points in
+performative prediction problems lie in the unknown decision-dependent data distributions. To
+address this challenge, a commonly used method is to make parametric assumptions on the data
+distributions and then design algorithms to estimate them. For instance, (Miller et al., 2021) proposed
+a two-stage algorithm to ﬁnd the performative optima for distribution maps in the location family. Izzo
+et al. (2021) proposed a PerfGD algorithm by exploiting the exponential structure of the underlying
+distribution maps.
+
+Among the numerous existing studies, (Narang et al., 2023) and (Wang et al., 2023) are, at a
+conceptual level, the closest papers to our own since they have considered performative behaviors in
+games. On a technical level, however, these two works are quite distinct from ours since we study
+completely different problem settings. One deﬁning distinction is that, in our model, the collective
+strategies of all players must adhere to the learning system’s constraints, whereas both (Narang
+et al., 2023) and (Wang et al., 2023) are unconstrained. Constraints are unavoidable in certain game
+scenarios, such as safety and cost constraints in transportation, relevance and diversity constraints in
+advertising, and risk tolerance and portfolio constraints in ﬁnancial trading. The constrained problem
+in our work results in a fundamentally different algorithm design and convergence analysis from
+these two papers. Our work utilizes the primal-dual technique and necessitates consensus, whereas
+their approach only requires local stochastic gradient descent. Additionally, there are distinctions in
+the problem settings. In (Wang et al., 2023), the private cost function of each player is structured
+in a speciﬁc form, involving a local cost depending solely on its own strategy and a regularizer
+quantifying the similarity of strategies among neighbors. In contrast, we consider a mathematically
+richer setting where each player’s private cost function depends on the strategies of all players in the
+game, thus encompassing the model in (Wang et al., 2023). Moreover, our algorithm design takes
+into account the practical implementation where players can only communicate with their neighbors,
+while (Narang et al., 2023) assumes that the strategies of all players are publicly accessible across the
+entire network. This more practical setting poses challenges for each player in observing the entire
+network. More importantly, although (Narang et al., 2023) and (Wang et al., 2023) demonstrated the
+existence and uniqueness of the PSE and NE for their respective game settings, neither of them offers
+insights into the distance between these two equilibria. This paper makes a signiﬁcant contribution
+by presenting the ﬁrst upper bound on this distance.
+
+Furthermore, there are works on decentralized optimization of multiagent performative prediction
+(Li et al., 2022; Piliouras and Yu, 2023). Speciﬁcally, (Li et al., 2022) focused on decentralized
+
+12
+
+
+---Page Break---
+optimization with consensus-seeking agents, where the data distribution of each agent depends only
+on its own decision. Although (Piliouras and Yu, 2023) considers multiagent, their study is in a
+centralized fashion and their data distributions are restricted to location-scale families. Lastly, it is
+worth mentioning that one paper (Yan and Cao, 2024b) has considered constrained optimization in
+the context of performative prediction. However, (Yan and Cao, 2024b) studied the single-agent case,
+while this work considers a more complex model with decentralized noncooperative players and
+partially observed information about competitors’ strategies. Additionally, this paper contributes to
+the evaluation of equilibria, whereas such analysis has not been involved in (Yan and Cao, 2024b).
+
+B
+Existence and Uniqueness of Performative Stable Equilibrium
+
+From the deﬁnition of the mapping T (θ), we have that
+
+θ′
+i = Ti(θ) = arg min
+ui∈Ωi
+Eξi∼Di(θ)Ji
+ 
+ξi; ui, θ′
+−i
+
+s.t.
+gi(ui) +
+X
+
+j̸=i
+gj
+ 
+θ′
+j
+
+≤0,
+∀i ∈[n],
+
+δ′
+i = Ti(δ) = arg min
+ui∈Ωi
+Eξi∼Di(δ)Ji
+ 
+ξi; ui, δ′
+−i
+
+s.t.
+gi(ui) +
+X
+
+j̸=i
+gj
+ 
+δ′
+j
+
+≤0,
+∀i ∈[n].
+
+Deﬁne Eξi∼Di(θ)∇θiJi
+ 
+ξi; θ′
+i, θ′
+−i
+
+:= G(i)
+θ (θ′
+i, θ′
+−i). From the optimality condition of constrained
+optimization, we have
+D
+G(i)
+θ
+ 
+θ′
+, θ′
+i −δ′
+i
+E
+≤0,
+∀i ∈[n].
+
+Deﬁne a vector Gθ(θ′) := col
+
+G(1)
+θ (θ′), · · · , G(n)
+θ (θ′)
+
+that concatenates all the G(i)
+θ (θ′), i ∈[n].
+Then, we have
+
+Gθ
+ 
+θ′
+, θ′ −δ′
+≤0.
+(A1)
 
 Similarly, we have
 
-<span id="page-12-4"></span><span id="page-12-3"></span><span id="page-12-2"></span>
-$$\langle G_{\delta}\left(\delta'\right), \theta' - \delta' \rangle \ge 0.$$
- (A2)
+Gδ
+ 
+δ′
+, θ′ −δ′
+≥0.
+(A2)
 
-Further, from the monotoniticy of the gradient mapping  $\nabla J(\xi;\theta)$  in Assumption 2.1, we have
+Further, from the monotoniticy of the gradient mapping ∇J (ξ; θ) in Assumption 2.1, we have
 
-$$\left\langle G_{\boldsymbol{\theta}}(\boldsymbol{\theta}') - G_{\boldsymbol{\theta}}(\boldsymbol{\delta}'), \boldsymbol{\theta}' - \boldsymbol{\delta}' \right\rangle = \mathbb{E}_{\boldsymbol{\xi} \sim \mathcal{D}(\boldsymbol{\theta})} \left\langle \nabla J\left(\boldsymbol{\xi}; \boldsymbol{\theta}'\right) - \nabla J\left(\boldsymbol{\xi}; \boldsymbol{\delta}'\right), \boldsymbol{\theta}' - \boldsymbol{\delta}' \right\rangle \ge \mu \|\boldsymbol{\theta}' - \boldsymbol{\delta}'\|_{2}^{2}, \tag{A3}$$
+Gθ(θ′) −Gθ(δ′), θ′ −δ′
+= Eξ∼D(θ)
 
-where  $\mathcal{D}(\theta) := \mathcal{D}_1(\theta) \times \cdots \times \mathcal{D}_n(\theta)$ . Plugging (A1) and (A2) into (A3) gives
+∇J
+ 
+ξ; θ′
+−∇J
+ 
+ξ; δ′
+, θ′ −δ′
+≥µ∥θ′ −δ′∥2
+2,
+(A3)
 
-$$\mu \|\boldsymbol{\theta}' - \boldsymbol{\delta}'\|_{2}^{2} \leq \left\langle -G_{\boldsymbol{\theta}}\left(\boldsymbol{\delta}'\right), \boldsymbol{\theta}' - \boldsymbol{\delta}'\right\rangle$$
+where D(θ) := D1(θ) × · · · × Dn(θ). Plugging (A1) and (A2) into (A3) gives
 
-$$\leq \left\langle G_{\boldsymbol{\delta}}\left(\boldsymbol{\delta}'\right) - G_{\boldsymbol{\theta}}\left(\boldsymbol{\delta}'\right), \boldsymbol{\theta}' - \boldsymbol{\delta}'\right\rangle$$
+µ∥θ′ −δ′∥2
+2 ≤
 
-$$\leq \left\| G_{\boldsymbol{\delta}}\left(\boldsymbol{\delta}'\right) - G_{\boldsymbol{\theta}}\left(\boldsymbol{\delta}'\right) \right\|_{2} \left\| \boldsymbol{\theta}' - \boldsymbol{\delta}' \right\|_{2}. \tag{A4}$$
+−Gθ
+ 
+δ′
+, θ′ −δ′
 
-From Assumption 2.2,  $W_1\left(\mathcal{D}_i\left(\boldsymbol{\theta}\right), \mathcal{D}_i\left(\boldsymbol{\theta}'\right)\right) \leq \varepsilon_i \sqrt{\sum_{j=1}^n p_{ij} \left\|\boldsymbol{\theta}_j - \boldsymbol{\theta}_j'\right\|_2^2}$ . Along with Assumption 2.4, we have that
+≤
 
-$$\begin{aligned} \left\|G_{\boldsymbol{\delta}}\left(\boldsymbol{\delta}'\right) - G_{\boldsymbol{\theta}}\left(\boldsymbol{\delta}'\right)\right\|_{2}^{2} &\leq \sum_{i=1}^{n} \sum_{j=1}^{n} L_{i}^{2} \varepsilon_{i}^{2} p_{ij} \left\|\boldsymbol{\delta}_{j} - \boldsymbol{\theta}_{j}\right\|_{2}^{2} \\ &\leq \sum_{i=1}^{n} L_{i}^{2} \varepsilon_{i}^{2} \max_{j \in [n]} p_{ij} \left\|\boldsymbol{\delta} - \boldsymbol{\theta}\right\|_{2}^{2}. \end{aligned}$$
+Gδ
+ 
+δ′
+−Gθ
+ 
+δ′
+, θ′ −δ′
+
+≤
+Gδ
+ 
+δ′
+−Gθ
+ 
+δ′
+2
+θ′ −δ′
+2 .
+(A4)
+
+From Assumption 2.2, W1
+ 
+Di (θ) , Di
+ 
+θ′
+≤εi
+qPn
+j=1 pij
+θj −θ′
+j
+2
+2. Along with Assumption
+2.4, we have that
+
+Gδ
+ 
+δ′
+−Gθ
+ 
+δ′2
+2 ≤
+
+n
+X
+
+i=1
+
+n
+X
+
+j=1
+L2
+i ε2
+i pij ∥δj −θj∥2
+2
+
+≤
+
+n
+X
+
+i=1
+L2
+i ε2
+i max
+j∈[n] pij ∥δ −θ∥2
+2 .
 
 Plugging the above result into (A4) yields
 
-$$\|\boldsymbol{\theta}' - \boldsymbol{\delta}'\|_2 \le \frac{1}{\mu} \sqrt{\sum_{i=1}^n L_i^2 \varepsilon_i^2 \max_{j \in [n]} p_{ij} \|\boldsymbol{\delta} - \boldsymbol{\theta}\|_2}.$$
+∥θ′ −δ′∥2 ≤1
 
-From the RRM procedure, we know that  $\theta^{t+1} = \mathcal{T}(\theta^t)$  and the PSE satisfies  $\theta^{\text{pse}} = \mathcal{T}(\theta^{\text{pse}})$ . Then, we have
+µ
 
-$$\|\boldsymbol{\theta}^{t+1} - \boldsymbol{\theta}^{\text{pse}}\|_{2} \leq \frac{1}{\mu} \sqrt{\sum_{i=1}^{n} L_{i}^{2} \varepsilon_{i}^{2} \max_{j \in [n]} p_{ij}} \|\boldsymbol{\theta}^{t} - \boldsymbol{\theta}^{\text{pse}}\|_{2}$$
+v
+u
+u
+t
 
-$$\leq \left(\frac{1}{\mu} \sqrt{\sum_{i=1}^{n} L_{i}^{2} \varepsilon_{i}^{2} \max_{j \in [n]} p_{ij}}\right)^{t} \|\boldsymbol{\theta}^{1} - \boldsymbol{\theta}^{\text{pse}}\|_{2}.$$
+n
+X
 
-Further, if for any player i, its distribution  $\mathcal{D}_i$  depends only on its own decision  $\theta_i$ , i.e.,  $p_{ij} = 0$  and  $p_{ii} = 1$  for all  $i, j \in [n]$  and  $j \neq i$ , then, we have
+i=1
+L2
+i ε2
+i max
+j∈[n] pij ∥δ −θ∥2 .
 
-$$\left\| \left( G_{\boldsymbol{\delta}} \left( \boldsymbol{\delta}' \right) - G_{\boldsymbol{\theta}} \left( \boldsymbol{\delta}' \right) \right) \right\|_{2} \leq \sqrt{\sum_{i=1}^{n} L_{i}^{2} \varepsilon_{i}^{2} \left\| \boldsymbol{\delta}_{i} - \boldsymbol{\theta}_{i} \right\|_{2}^{2}} \leq \max_{i \in [n]} L_{i} \varepsilon_{i} \left\| \boldsymbol{\delta} - \boldsymbol{\theta} \right\|_{2}. \tag{A5}$$
+13
+
+
+---Page Break---
+From the RRM procedure, we know that θt+1 = T (θt) and the PSE satisﬁes θpse = T (θpse). Then,
+we have
+
+θt+1 −θpse
+2 ≤1
+
+µ
+
+v
+u
+u
+t
+
+n
+X
+
+i=1
+L2
+i ε2
+i max
+j∈[n] pij
+θt −θpse
+2
+
+≤
+
+
+
+1
+
+µ
+
+v
+u
+u
+t
+
+n
+X
+
+i=1
+L2
+i ε2
+i max
+j∈[n] pij
+
+
+
+
+
+t
+θ1 −θpse
+2 .
+
+Further, if for any player i, its distribution Di depends only on its own decision θi, i.e., pij = 0 and
+pii = 1 for all i, j ∈[n] and j ̸= i, then, we have
+
+ 
+Gδ
+ 
+δ′
+−Gθ
+ 
+δ′
+2 ≤
+
+v
+u
+u
+t
+
+n
+X
+
+i=1
+L2
+i ε2
+i ∥δi −θi∥2
+2 ≤max
+i∈[n] Liεi ∥δ −θ∥2 .
+(A5)
 
 Plugging (A5) into (A4) yields
 
-<span id="page-13-1"></span>
-$$\|\boldsymbol{\theta}' - \boldsymbol{\delta}'\|_2 \le \frac{1}{\mu} \max_{i \in [n]} L_i \varepsilon_i \|\boldsymbol{\delta} - \boldsymbol{\theta}\|_2$$
+∥θ′ −δ′∥2 ≤1
+
+µ max
+i∈[n] Liεi ∥δ −θ∥2 .
 
 Correspondingly, we have
 
-$$\left\| \boldsymbol{\theta}^{t+1} - \boldsymbol{\theta}^{\mathrm{pse}} \right\|_{2} \leq \left( \frac{1}{\mu} \max_{i \in [n]} L_{i} \varepsilon_{i} \right)^{t} \left\| \boldsymbol{\theta}^{1} - \boldsymbol{\theta}^{\mathrm{pse}} \right\|_{2}.$$
+θt+1 −θpse
+2 ≤
+ 1
 
-# <span id="page-13-0"></span>C Existence and Uniqueness of Nash Equilibrium
+µ max
+i∈[n] Liεi
 
-Based on the results in Facchinei and Pang (2003, Theorem 2.3.3(b)), to show the existence and uniqueness of NE, we need to prove that the gradient mapping  $\nabla PR(\theta)$  of the performative game (1) is strongly monotone, i.e., there exists a  $\alpha>0$  such that  $\langle \nabla PR(\theta) - \nabla PR(\theta), \theta - \delta \rangle \geq \alpha \|\theta - \delta\|_2^2$ , where  $\alpha$  denotes the strongly-monotone parameter. Since  $\nabla PR(\theta) = G_{\theta}(\theta) + H_{\theta}(\theta)$ , we have
+t θ1 −θpse
+2 .
 
-$$\langle \nabla PR(\boldsymbol{\theta}) - \nabla PR(\boldsymbol{\delta}), \boldsymbol{\theta} - \boldsymbol{\delta} \rangle = \langle G_{\boldsymbol{\theta}}(\boldsymbol{\theta}) - G_{\boldsymbol{\delta}}(\boldsymbol{\delta}), \boldsymbol{\theta} - \boldsymbol{\delta} \rangle + \langle H_{\boldsymbol{\theta}}(\boldsymbol{\theta}) - H_{\boldsymbol{\delta}}(\boldsymbol{\delta}), \boldsymbol{\theta} - \boldsymbol{\delta} \rangle.$$
+C
+Existence and Uniqueness of Nash Equilibrium
+
+Based on the results in Facchinei and Pang (2003, Theorem 2.3.3(b)), to show the existence and
+uniqueness of NE, we need to prove that the gradient mapping ∇PR(θ) of the performative game
+(1) is strongly monotone, i.e., there exists a α > 0 such that ⟨∇PR(θ) −∇PR(θ), θ −δ⟩≥
+α ∥θ −δ∥2
+2, where α denotes the strongly-monotone parameter. Since ∇PR(θ) = Gθ(θ) + Hθ(θ),
+we have
+
+⟨∇PR(θ) −∇PR(δ), θ −δ⟩= ⟨Gθ(θ) −Gδ(δ), θ −δ⟩+ ⟨Hθ(θ) −Hδ(δ), θ −δ⟩.
 
 From Assumption 2.2, we have
 
-<span id="page-13-2"></span>
-$$\langle G_{\boldsymbol{\theta}}(\boldsymbol{\theta}) - G_{\boldsymbol{\delta}}(\boldsymbol{\theta}), \boldsymbol{\theta} - \boldsymbol{\delta} \rangle \ge - \sum_{i=1}^{n} L_{i} \varepsilon_{i} \max_{j \in [n]} \sqrt{p_{ij}} \|\boldsymbol{\theta} - \boldsymbol{\delta}\|_{2}^{2}.$$
+⟨Gθ(θ) −Gδ(θ), θ −δ⟩≥−
 
-Moreover, from the monotonicity of the gradient mapping  $\nabla J(\xi;\theta)$  in Assumption 2.1, we have
+n
+X
 
-$$\langle G_{\delta}(\boldsymbol{\theta}) - G_{\delta}(\boldsymbol{\delta}), \boldsymbol{\theta} - \boldsymbol{\delta} \rangle = \mathbb{E}_{\boldsymbol{\xi} \sim \mathcal{D}(\boldsymbol{\delta})} \langle \nabla J(\boldsymbol{\xi}; \boldsymbol{\theta}) - \nabla J(\boldsymbol{\xi}; \boldsymbol{\delta}), \boldsymbol{\theta} - \boldsymbol{\delta} \rangle \ge \mu \|\boldsymbol{\theta} - \boldsymbol{\delta}\|_{2}^{2}$$
+i=1
+Liεi max
+j∈[n]
+√pij ∥θ −δ∥2
+2 .
+
+Moreover, from the monotonicity of the gradient mapping ∇J (ξ; θ) in Assumption 2.1, we have
+
+⟨Gδ(θ) −Gδ(δ), θ −δ⟩= Eξ∼D(δ) ⟨∇J(ξ; θ) −∇J(ξ; δ), θ −δ⟩≥µ ∥θ −δ∥2
+2 .
 
 Combining the above two inequalities yields
 
-$$\langle G_{\theta}(\theta) - G_{\delta}(\delta), \theta - \delta \rangle = \langle G_{\theta}(\theta) - G_{\delta}(\theta), \theta - \delta \rangle + \langle G_{\delta}(\theta) - G_{\delta}(\delta), \theta - \delta \rangle$$
+⟨Gθ(θ) −Gδ(δ), θ −δ⟩= ⟨Gθ(θ) −Gδ(θ), θ −δ⟩+ ⟨Gδ(θ) −Gδ(δ), θ −δ⟩
 
-$$\geq \left(\mu - \sum_{i=1}^{n} L_{i} \varepsilon_{i} \max_{j \in [n]} \sqrt{p_{ij}}\right) \|\theta - \delta\|_{2}^{2}. \tag{A6}$$
+≥
 
-Further, let  $\gamma(s) = \theta' + s(\theta - \theta')$  for  $s \in (0, 1)$ . Then, we have
+ 
 
-$$J_{i}(\boldsymbol{\xi}_{i};\boldsymbol{\theta}) - J_{i}(\boldsymbol{\xi}_{i};\boldsymbol{\theta}') = \int_{0}^{1} \left\langle \nabla J_{i}(\boldsymbol{\xi}_{i};\boldsymbol{\theta}' + s(\boldsymbol{\theta} - \boldsymbol{\theta}')), \boldsymbol{\theta} - \boldsymbol{\theta}' \right\rangle ds$$
+µ −
 
-$$= \int_{0}^{1} \left\langle \nabla J_{i}(\boldsymbol{\xi}_{i};\gamma(s)), \boldsymbol{\theta} - \boldsymbol{\theta}' \right\rangle ds. \tag{A7}$$
+n
+X
 
-From the definition of  $H_{\boldsymbol{\theta}}^{(i)}(\boldsymbol{\delta})$  that  $H_{\boldsymbol{\theta}}^{(i)}(\boldsymbol{\delta}) := \nabla_{\boldsymbol{u}_i} \mathbb{E}_{\boldsymbol{\xi}_i \sim \mathcal{D}_i(\boldsymbol{u}_i, \boldsymbol{\theta}_{-i})} \left[ J_i(\boldsymbol{\xi}_i; \boldsymbol{\delta}) \right]_{\boldsymbol{u}_i = \boldsymbol{\theta}_i}$ , we have that
+i=1
+Liεi max
+j∈[n]
+√pij
 
-$$H_{\boldsymbol{\theta}}^{(i)}(\boldsymbol{\theta}) - H_{\boldsymbol{\theta}}^{(i)}(\boldsymbol{\theta}') = \nabla_{\boldsymbol{u}_{i}} \mathbb{E}_{\boldsymbol{\xi}_{i} \sim \mathcal{D}_{i}(\boldsymbol{u}_{i}, \boldsymbol{\theta}_{-i})} \left[ \int_{0}^{1} \left\langle \nabla J_{i}\left(\boldsymbol{\xi}_{i}; \gamma(s)\right), \boldsymbol{\theta} - \boldsymbol{\theta}' \right\rangle ds \right] \Big|_{\boldsymbol{u}_{i} = \boldsymbol{\theta}_{i}}$$
+!
 
-$$= \int_{0}^{1} \nabla_{\boldsymbol{u}_{i}} \mathbb{E}_{\boldsymbol{\xi}_{i} \sim \mathcal{D}_{i}(\boldsymbol{u}_{i}, \boldsymbol{\theta}_{-i})} \left\langle \nabla J_{i}\left(\boldsymbol{\xi}_{i}; \gamma(s)\right), \boldsymbol{\theta} - \boldsymbol{\theta}' \right\rangle \Big|_{\boldsymbol{u}_{i} = \boldsymbol{\theta}_{i}} ds. \tag{A8}$$
+∥θ −δ∥2
+2 .
+(A6)
+
+Further, let γ(s) = θ′ + s
+ 
+θ −θ′
+for s ∈(0, 1). Then, we have
+
+Ji (ξi; θ) −Ji
+ 
+ξi; θ′
+=
+Z 1
+
+0
+
+
+∇Ji
+ 
+ξi; θ′ + s
+ 
+θ −θ′
+, θ −θ′
+ds
+
+=
+Z 1
+
+0
+
+
+∇Ji (ξi; γ(s)) , θ −θ′
+ds.
+(A7)
+
+14
+
+
+---Page Break---
+From the deﬁnition of H(i)
+θ (δ) that H(i)
+θ (δ) := ∇uiEξi∼Di(ui,θ−i) [Ji (ξi; δ)]
+
+ui=θi, we have that
+
+H(i)
+θ (θ) −H(i)
+θ (θ′) = ∇uiEξi∼Di(ui,θ−i)
+
+Z 1
+
+0
+
+
+∇Ji (ξi; γ(s)) , θ −θ′
+ds
+
+ui=θi
+
+=
+Z 1
+
+0
+∇uiEξi∼Di(ui,θ−i)
+
+∇Ji (ξi; γ(s)) , θ −θ′
+ui=θi
+ds.
+(A8)
 
 From Assumption 2.4, we have
+Eξi∼Di∇Ji (ξi; θ) −Eξ′
+i∼D′
+i∇Ji
+ 
+ξ′
+i; θ
+
+2 ≤LiW1(Di, D′
+i).
 
-<span id="page-14-1"></span>
-$$\left\|\mathbb{E}_{\boldsymbol{\xi}_{i} \sim \mathcal{D}_{i}} \nabla J_{i}\left(\boldsymbol{\xi}_{i}; \boldsymbol{\theta}\right) - \mathbb{E}_{\boldsymbol{\xi}_{i}' \sim \mathcal{D}_{i}'} \nabla J_{i}\left(\boldsymbol{\xi}_{i}'; \boldsymbol{\theta}\right)\right\|_{2} \leq L_{i} \mathcal{W}_{1}(\mathcal{D}_{i}, \mathcal{D}_{i}').$$
+Along with Assumption 2.2, we know that the function Eξi∼Di(θi,θ−i)∇Ji
+ 
+ξi; θ′
+is Liεipii-
+Lipschitz continuous w.r.t θi, and thus its gradient satisﬁes
+∇uiEξi∼Di(ui,θ−i) [∇Ji (ξi; γ(s))]
+
+ui=θi
 
-Along with Assumption 2.2, we know that the function  $\mathbb{E}_{\boldsymbol{\xi}_i \sim \mathcal{D}_i(\boldsymbol{\theta}_i, \boldsymbol{\theta}_{-i})} \nabla J_i\left(\boldsymbol{\xi}_i; \boldsymbol{\theta}'\right)$  is  $L_i \varepsilon_i p_{ii}$ -Lipschitz continuous w.r.t  $\boldsymbol{\theta}_i$ , and thus its gradient satisfies
-
-<span id="page-14-2"></span>
-$$\left\| \nabla_{\boldsymbol{u}_{i}} \mathbb{E}_{\boldsymbol{\xi}_{i} \sim \mathcal{D}_{i}(\boldsymbol{u}_{i}, \boldsymbol{\theta}_{-i})} \left[ \nabla J_{i} \left( \boldsymbol{\xi}_{i}; \gamma(s) \right) \right] \right|_{\boldsymbol{u}_{i} = \boldsymbol{\theta}_{i}} \right\|_{2} \leq L_{i} \varepsilon_{i} p_{ii}. \tag{A9}$$
+
+2 ≤Liεipii.
+(A9)
 
 Combing (A8) and (A9) gives
+H(i)
+θ (θ) −H(i)
+θ (θ′)
+
+2 ≤
+Z 1
 
-$$\begin{aligned} \left\| H_{\boldsymbol{\theta}}^{(i)}(\boldsymbol{\theta}) - H_{\boldsymbol{\theta}}^{(i)}(\boldsymbol{\theta}') \right\|_{2} &\leq \int_{0}^{1} \left\| \nabla_{\boldsymbol{u}_{i}} \mathbb{E}_{\boldsymbol{\xi}_{i} \sim \mathcal{D}_{i}(\boldsymbol{u}_{i}, \boldsymbol{\theta}_{-i})} \left[ \nabla J_{i} \left( \boldsymbol{\xi}_{i}; \gamma(s) \right) \right] \right|_{\boldsymbol{u}_{i} = \boldsymbol{\theta}_{i}} \right\|_{2} \left\| \boldsymbol{\theta} - \boldsymbol{\theta}' \right\|_{2} ds \\ &\leq L_{i} \varepsilon_{i} p_{ii} \left\| \boldsymbol{\theta} - \boldsymbol{\theta}' \right\|_{2}, \end{aligned}$$
+0
 
-where the first inequality holds due to the Cauchy-Schwartz inequality. This further implies that
+∇uiEξi∼Di(ui,θ−i) [∇Ji (ξi; γ(s))]
+
+ui=θi
 
-$$\|H_{\boldsymbol{\theta}}(\boldsymbol{\theta}) - H_{\boldsymbol{\theta}}(\boldsymbol{\theta}')\|_{2} = \sqrt{\sum_{i=1}^{n} \|H_{\boldsymbol{\theta}}^{(i)}(\boldsymbol{\theta}) - H_{\boldsymbol{\theta}}^{(i)}(\boldsymbol{\theta}')\|_{2}^{2}}$$
+
+2
 
-$$\leq \sqrt{\sum_{i=1}^{n} L_{i}^{2} \varepsilon_{i}^{2} p_{ii}} \|\boldsymbol{\theta} - \boldsymbol{\theta}'\|_{2}.$$
+θ −θ′
+2 ds
 
-Following prior work (Narang et al., 2023) and (Wang et al., 2023) on performative games, we assume that the mapping  $H_{\delta}(\theta)$  is monotone w.r.t  $\delta$ , i.e.,  $\langle H_{\theta}(\theta) - H_{\delta}(\theta), \theta - \delta \rangle \geq 0$ . Then, we have that
+≤Liεipii
+θ −θ′
+2 ,
 
-$$\begin{split} \langle \nabla \mathrm{PR}(\boldsymbol{\theta}) - \nabla \mathrm{PR}(\boldsymbol{\delta}), \boldsymbol{\theta} - \boldsymbol{\delta} \rangle &= \langle G_{\boldsymbol{\theta}}(\boldsymbol{\theta}) - G_{\boldsymbol{\delta}}(\boldsymbol{\delta}), \boldsymbol{\theta} - \boldsymbol{\delta} \rangle + \langle H_{\boldsymbol{\theta}}(\boldsymbol{\theta}) - H_{\boldsymbol{\delta}}(\boldsymbol{\delta}), \boldsymbol{\theta} - \boldsymbol{\delta} \rangle \\ &= \langle G_{\boldsymbol{\theta}}(\boldsymbol{\theta}) - G_{\boldsymbol{\delta}}(\boldsymbol{\theta}), \boldsymbol{\theta} - \boldsymbol{\delta} \rangle + \langle H_{\boldsymbol{\theta}}(\boldsymbol{\theta}) - H_{\boldsymbol{\delta}}(\boldsymbol{\theta}), \boldsymbol{\theta} - \boldsymbol{\delta} \rangle \\ &+ \langle G_{\boldsymbol{\delta}}(\boldsymbol{\theta}) - G_{\boldsymbol{\delta}}(\boldsymbol{\delta}), \boldsymbol{\theta} - \boldsymbol{\delta} \rangle + \langle H_{\boldsymbol{\delta}}(\boldsymbol{\theta}) - H_{\boldsymbol{\delta}}(\boldsymbol{\delta}), \boldsymbol{\theta} - \boldsymbol{\delta} \rangle \\ &\geq \left( \mu - \sum_{i=1}^n L_i \varepsilon_i \max_{j \in [n]} \sqrt{p_{ij}} - \sqrt{\sum_{i=1}^n L_i^2 \varepsilon_i^2 p_{ii}} \right) \|\boldsymbol{\theta} - \boldsymbol{\delta}\|_2^2 \,. \end{split}$$
+where the ﬁrst inequality holds due to the Cauchy-Schwartz inequality. This further implies that
 
-Based on the classical result that a strongly monotone game over a non-empty, closed, and convex set admits a unique NE Facchinei and Pang (2003, Theorem 2.3.3(b)), we have the E&U condition for the NE of the game (1) as given in theorem 3.4.
+Hθ(θ) −Hθ(θ′)
+
+2 =
 
-#### <span id="page-14-0"></span>D Distance Between PSE and NE
+v
+u
+u
+t
 
-The computation on the distance between the PSE and NE of the game (1) is based on the strong duality (Boyd and Vandenberghe, 2004; Facchinei and Pang, 2010). Recall the definitions in Section 4.1 that
+n
+X
 
-$$\mathcal{L}_{\boldsymbol{\delta}}^{(i)}(\boldsymbol{\theta}_i,\boldsymbol{\theta}_{-i},\boldsymbol{\lambda}) := \mathbb{E}_{\boldsymbol{\xi}_i \sim \mathcal{D}_i(\boldsymbol{\delta})} J_i\left(\boldsymbol{\xi}_i;\boldsymbol{\theta}_i,\boldsymbol{\theta}_{-i}\right) + \left\langle \boldsymbol{\lambda},\boldsymbol{g}_i(\boldsymbol{\theta}_i) + \sum_{j \neq i} \boldsymbol{g}_j\left(\boldsymbol{\theta}_j\right)\right\rangle.$$
+i=1
 
-Moreover, define a gradient mapping  $\phi_i(\boldsymbol{\xi}_i; \boldsymbol{\theta}, \boldsymbol{\lambda}) := \nabla_{\boldsymbol{\theta}_i} J_i(\boldsymbol{\xi}_i; \boldsymbol{\theta}) + \nabla \boldsymbol{g}_i(\boldsymbol{\theta}_i)^{\top} \boldsymbol{\lambda}$  and a concatenation vector  $\boldsymbol{\phi} := [\phi_1, \cdots, \phi_n]^{\top}$ . For any  $i \in [n]$ , since  $(\boldsymbol{\theta}_i^{\text{pse}}, \boldsymbol{\lambda}^{\text{pse}})$  is a saddle point of the Lagrangian  $\mathcal{L}_{\boldsymbol{\theta}^{\text{pse}}}^{(i)}(\boldsymbol{\theta}_i, \boldsymbol{\theta}_{-i}^{\text{pse}}, \boldsymbol{\lambda})$  under  $\boldsymbol{\xi}_i \sim \mathcal{D}_i(\boldsymbol{\theta}^{\text{pse}})$ , we have that
+H(i)
+θ (θ) −H(i)
+θ (θ′)
+
+2
 
-$$\mathcal{L}_{\boldsymbol{\theta}^{\mathrm{pse}}}^{(i)}\left(\boldsymbol{\theta}_{i}^{\mathrm{pse}},\boldsymbol{\theta}_{-i}^{\mathrm{pse}},\boldsymbol{\lambda}\right) \leq \mathcal{L}_{\boldsymbol{\theta}^{\mathrm{pse}}}^{(i)}\left(\boldsymbol{\theta}_{i}^{\mathrm{pse}},\boldsymbol{\theta}_{-i}^{\mathrm{pse}},\boldsymbol{\lambda}^{\mathrm{pse}}\right) \leq \mathcal{L}_{\boldsymbol{\theta}^{\mathrm{pse}}}^{(i)}\left(\boldsymbol{\theta}_{i},\boldsymbol{\theta}_{-i}^{\mathrm{pse}},\boldsymbol{\lambda}^{\mathrm{pse}}\right) \quad \forall \boldsymbol{\theta}_{i} \in \boldsymbol{\Omega}_{i}, \boldsymbol{\lambda} \in \mathbb{R}_{+}^{m}.$$
+2
 
-Similarly, for any  $i \in [n]$ ,  $(\theta_i^{\rm ne}, \lambda^{\rm ne})$  the saddle point of the regularized Lagrangian  $\mathcal{L}^{(i)}_{\theta_i,\theta_{-i}^{\rm ne}}(\theta_i,\theta_{-i}^{\rm ne},\lambda)$  with decision-dependent distribution  $\boldsymbol{\xi}_i \sim \mathcal{D}_i(\theta_i,\theta_{-i}^{\rm ne})$ . Setting  $\boldsymbol{\lambda} = \boldsymbol{\lambda}^{\rm ne}$  in the first part of the proceeding inequality, we obtain
+≤
 
-$$\mathbf{0} \leq \mathcal{L}_{\boldsymbol{\theta}^{\mathrm{pse}}}^{(i)}\left(\boldsymbol{\theta}_{i}^{\mathrm{pse}}, \boldsymbol{\theta}_{-i}^{\mathrm{pse}}, \boldsymbol{\lambda}^{\mathrm{pse}}\right) - \mathcal{L}_{\boldsymbol{\theta}^{\mathrm{pse}}}^{(i)}\left(\boldsymbol{\theta}_{i}^{\mathrm{pse}}, \boldsymbol{\theta}_{-i}^{\mathrm{pse}}, \boldsymbol{\lambda}^{\mathrm{ne}}\right) = (\boldsymbol{\lambda}^{\mathrm{pse}} - \boldsymbol{\lambda}^{\mathrm{ne}})^{\top} \boldsymbol{g}\left(\boldsymbol{\theta}^{\mathrm{pse}}\right), \forall i \in [n],$$
+v
+u
+u
+t
 
-where  $(\boldsymbol{\lambda}^{\mathrm{pse}} - \boldsymbol{\lambda}^{\mathrm{ne}})^{\top} \boldsymbol{g} (\boldsymbol{\theta}^{\mathrm{pse}}) = \sum_{j=1}^{m} \left( \lambda_{j}^{\mathrm{pse}} - \lambda_{j}^{\mathrm{ne}} \right) \left( \sum_{i=1}^{n} g_{ji} (\boldsymbol{\theta}_{i}^{\mathrm{pse}}) \right)$ . By the convexity of  $g_{ji}(\cdot)$  for all  $j \in [m]$ ,  $i \in [n]$ , we have that
+n
+X
 
-$$\sum_{i=1}^{n} g_{ji} \left(\boldsymbol{\theta}_{i}^{\text{pse}}\right) \leq \sum_{i=1}^{n} \left(g_{ji} \left(\boldsymbol{\theta}_{i}^{\text{ne}}\right) + \left\langle \nabla g_{ji} \left(\boldsymbol{\theta}_{i}^{\text{pse}}\right), \boldsymbol{\theta}_{i}^{\text{pse}} - \boldsymbol{\theta}_{i}^{\text{ne}} \right\rangle\right)$$
+i=1
+L2
+i ε2
+i pii
+θ −θ′
+2 .
 
-$$\leq \sum_{i=1}^{n} \left\langle \nabla g_{ji} \left(\boldsymbol{\theta}_{i}^{\text{pse}}\right), \boldsymbol{\theta}_{i}^{\text{pse}} - \boldsymbol{\theta}_{i}^{\text{ne}} \right\rangle, \forall j \in [m],$$
+Following prior work (Narang et al., 2023) and (Wang et al., 2023) on performative games, we assume
+that the mapping Hδ(θ) is monotone w.r.t δ, i.e., ⟨Hθ(θ) −Hδ(θ), θ −δ⟩≥0. Then, we have that
 
-where the last inequality follows from that  $g_j(\boldsymbol{\theta}^{\mathrm{ne}}) = \sum_{i=1}^n g_{ji}(\boldsymbol{\theta}_i^{\mathrm{ne}}) \leq 0$ . Multiplying the preceding inequality with  $\lambda_j^{\mathrm{pse}}$  and adding over all  $j \in [m]$ , we obtain
+⟨∇PR(θ) −∇PR(δ), θ −δ⟩= ⟨Gθ(θ) −Gδ(δ), θ −δ⟩+ ⟨Hθ(θ) −Hδ(δ), θ −δ⟩
+= ⟨Gθ(θ) −Gδ(θ), θ −δ⟩+ ⟨Hθ(θ) −Hδ(θ), θ −δ⟩
++ ⟨Gδ(θ) −Gδ(δ), θ −δ⟩+ ⟨Hδ(θ) −Hδ(δ), θ −δ⟩
 
-$$\sum_{j=1}^{m} \sum_{i=1}^{n} \lambda_{j}^{\text{pse}} g_{ji} \left(\boldsymbol{\theta}_{i}^{\text{pse}}\right) = \left(\boldsymbol{\lambda}^{\text{pse}}\right)^{\top} \boldsymbol{g} \left(\boldsymbol{\theta}^{\text{pse}}\right) \leq \sum_{i=1}^{n} \left\langle \sum_{j=1}^{m} \lambda_{j}^{\text{pse}} \nabla g_{ji} \left(\boldsymbol{\theta}_{i}^{\text{pse}}\right), \boldsymbol{\theta}_{i}^{\text{pse}} - \boldsymbol{\theta}_{i}^{\text{ne}} \right\rangle \\
-= \sum_{i=1}^{n} \left\langle \nabla \boldsymbol{g}_{i} \left(\boldsymbol{\theta}_{i}^{\text{pse}}\right)^{\top} \boldsymbol{\lambda}^{\text{pse}}, \boldsymbol{\theta}_{i}^{\text{pse}} - \boldsymbol{\theta}_{i}^{\text{ne}} \right\rangle. \tag{A10}$$
+≥
 
-By the definition of the mapping  $\phi_i(\cdot)$ , for any  $\xi_i \in \Xi_i$ , we have that,
+
 
-<span id="page-15-2"></span><span id="page-15-1"></span><span id="page-15-0"></span>
-$$\nabla g_i(\boldsymbol{\theta}_i^{\text{pse}})^{\top} \boldsymbol{\lambda}^{\text{pse}} = \phi_i(\boldsymbol{\xi}_i; \boldsymbol{\theta}^{\text{pse}}, \boldsymbol{\lambda}^{\text{pse}}) - \nabla_{\boldsymbol{\theta}_i} J_i(\boldsymbol{\xi}_i; \boldsymbol{\theta}^{\text{pse}}), \forall i \in [n]. \tag{A11}$$
+µ −
+
+n
+X
+
+i=1
+Liεi max
+j∈[n]
+√pij −
+
+v
+u
+u
+t
+
+n
+X
+
+i=1
+L2
+i ε2
+i pii
+
+
+
+∥θ −δ∥2
+2 .
+
+Based on the classical result that a strongly monotone game over a non-empty, closed, and convex set
+admits a unique NE Facchinei and Pang (2003, Theorem 2.3.3(b)), we have the E&U condition for
+the NE of the game (1) as given in theorem 3.4.
+
+D
+Distance Between PSE and NE
+
+The computation on the distance between the PSE and NE of the game (1) is based on the strong
+duality (Boyd and Vandenberghe, 2004; Facchinei and Pang, 2010). Recall the deﬁnitions in Section
+4.1 that
+
+L(i)
+δ (θi, θ−i, λ) := Eξi∼Di(δ)Ji (ξi; θi, θ−i) +
+
+*
+
+λ, gi(θi) +
+X
+
+j̸=i
+gj (θj)
+
++
+
+.
+
+Moreover, deﬁne a gradient mapping φi(ξi; θ, λ) := ∇θiJi (ξi; θ)+∇gi(θi)⊤λ and a concatenation
+vector φ := [φ1, · · · , φn]⊤. For any i ∈[n], since (θpse
+i
+, λpse) is a saddle point of the Lagrangian
+L(i)
+θpse(θi, θpse
+−i , λ) under ξi ∼Di(θpse), we have that
+
+L(i)
+θpse
+ 
+θpse
+i
+, θpse
+−i , λ
+
+≤L(i)
+θpse
+ 
+θpse
+i
+, θpse
+−i , λpse
+≤L(i)
+θpse
+ 
+θi, θpse
+−i , λpse
+∀θi ∈Ωi, λ ∈Rm
++.
+
+15
+
+
+---Page Break---
+Similarly, for any i
+∈
+[n], (θne
+i , λne) the saddle point of the regularized Lagrangian
+L(i)
+θi,θne
+−i(θi, θne
+−i, λ) with decision-dependent distribution ξi ∼Di(θi, θne
+−i). Setting λ = λne
+
+in the ﬁrst part of the proceeding inequality, we obtain
+
+0 ≤L(i)
+θpse
+ 
+θpse
+i
+, θpse
+−i , λpse
+−L(i)
+θpse
+ 
+θpse
+i
+, θpse
+−i , λne
+= (λpse −λne)⊤g (θpse) , ∀i ∈[n],
+
+where (λpse −λne)⊤g (θpse) = Pm
+j=1
+ 
+λpse
+j
+−λne
+j
+
+(Pn
+i=1 gji (θpse
+i
+)). By the convexity of gji(·)
+for all j ∈[m], i ∈[n], we have that
+
+n
+X
+
+i=1
+gji (θpse
+i
+) ≤
+
+n
+X
+
+i=1
+(gji (θne
+i ) + ⟨∇gji (θpse
+i
+) , θpse
+i
+−θne
+i ⟩)
+
+≤
+
+n
+X
+
+i=1
+⟨∇gji (θpse
+i
+) , θpse
+i
+−θne
+i ⟩, ∀j ∈[m],
+
+where the last inequality follows from that gj(θne) = Pn
+i=1 gji (θne
+i ) ≤0. Multiplying the preceding
+inequality with λpse
+j
+and adding over all j ∈[m], we obtain
+
+m
+X
+
+j=1
+
+n
+X
+
+i=1
+λpse
+j
+gji (θpse
+i
+) = (λpse)⊤g (θpse) ≤
+
+n
+X
+
+i=1
+
+* m
+X
+
+j=1
+λpse
+j
+∇gji (θpse
+i
+) , θpse
+i
+−θne
+i
+
++
+
+=
+
+n
+X
+
+i=1
+
+
+∇gi(θpse
+i
+)⊤λpse, θpse
+i
+−θne
+i
+
+.
+(A10)
+
+By the deﬁnition of the mapping φi(·), for any ξi ∈Ξi, we have that,
+
+∇gi(θpse
+i
+)⊤λpse = φi(ξi; θpse, λpse) −∇θiJi (ξi; θpse) , ∀i ∈[n].
+(A11)
 
 Plugging (A11) into (A10) gives
 
-$$(\boldsymbol{\lambda}^{\text{pse}})^{\top} \boldsymbol{g} \left( \boldsymbol{\theta}^{\text{pse}} \right) \leq \sum_{i=1}^{n} \left\langle \phi_{i}(\boldsymbol{\xi}_{i}; \boldsymbol{\theta}^{\text{pse}}, \boldsymbol{\lambda}^{\text{pse}}) - \nabla_{\boldsymbol{\theta}_{i}} J_{i} \left(\boldsymbol{\xi}_{i}; \boldsymbol{\theta}^{\text{pse}}\right), \boldsymbol{\theta}_{i}^{\text{pse}} - \boldsymbol{\theta}_{i}^{\text{ne}} \right\rangle, \forall i \in [n]. \quad (A12)$$
+(λpse)⊤g (θpse) ≤
 
-Likewise, we have the following inequality based on the convexity of the functions  $\{g_{ji}(\cdot)\}$ :
+n
+X
 
-$$g_{ji}\left(\boldsymbol{\theta}_{i}^{\mathrm{pse}}\right) \geq g_{ji}\left(\boldsymbol{\theta}_{i}^{\mathrm{ne}}\right) + \left\langle \nabla g_{ji}\left(\boldsymbol{\theta}_{i}^{\mathrm{ne}}\right), \boldsymbol{\theta}_{i}^{\mathrm{pse}} - \boldsymbol{\theta}_{i}^{\mathrm{ne}} \right\rangle, \forall j \in [m], i \in [n].$$
+i=1
+⟨φi(ξi; θpse, λpse) −∇θiJi (ξi; θpse) , θpse
+i
+−θne
+i ⟩, ∀i ∈[n].
+(A12)
 
-Multiplying the preceding inequality with  $-\lambda_i^{\text{ne}}$  and summing over  $j \in [m]$ , we obtain
+Likewise, we have the following inequality based on the convexity of the functions {gji(·)}:
 
-$$\begin{split} -\sum_{j=1}^{m} \lambda_{i}^{\text{ne}} \sum_{i=1}^{n} g_{ji} \left(\boldsymbol{\theta}_{i}^{\text{pse}}\right) &\leq -\sum_{j=1}^{m} \lambda_{j}^{\text{ne}} \sum_{i=1}^{n} g_{ji} \left(\boldsymbol{\theta}_{i}^{\text{ne}}\right) - \sum_{i=1}^{n} \left\langle \sum_{j=1}^{m} \lambda_{j}^{\text{ne}} \nabla g_{ji} \left(\boldsymbol{\theta}_{i}^{\text{ne}}\right), \boldsymbol{\theta}_{i}^{\text{pse}} - \boldsymbol{\theta}_{i}^{\text{ne}} \right\rangle \\ &= \sum_{i=1}^{n} \left\langle \nabla \boldsymbol{g}_{i} \left(\boldsymbol{\theta}_{i}^{\text{ne}}\right)^{\top} \boldsymbol{\lambda}^{\text{ne}}, \boldsymbol{\theta}_{i}^{\text{ne}} - \boldsymbol{\theta}_{i}^{\text{pse}} \right\rangle, \end{split}$$
+gji (θpse
+i
+) ≥gji (θne
+i ) + ⟨∇gji (θne
+i ) , θpse
+i
+−θne
+i ⟩, ∀j ∈[m], i ∈[n].
 
-where the equality follows from that  $\sum_{j=1}^{m} \lambda_{j}^{\text{ne}} \sum_{i=1}^{n} g_{ji} (\boldsymbol{\theta}_{i}^{\text{ne}}) = (\boldsymbol{\lambda}^{\text{ne}})^{\top} \boldsymbol{g} (\boldsymbol{\theta}^{\text{ne}}) = 0$ , which holds by the complementary slackness condition of the Lagrangian  $\mathcal{L}_{\boldsymbol{\theta}_{i},\boldsymbol{\theta}_{-i}^{\text{ne}}}^{(i)}(\boldsymbol{\theta}_{i},\boldsymbol{\theta}_{-i}^{\text{ne}},\boldsymbol{\lambda})$  for all  $i \in [n]$ . Similar to (A12), we have
+Multiplying the preceding inequality with −λne
+j and summing over j ∈[m], we obtain
 
-<span id="page-15-3"></span>
-$$-\left(\boldsymbol{\lambda}^{\mathrm{ne}}\right)^{\top}\boldsymbol{g}\left(\boldsymbol{\theta}^{\mathrm{pse}}\right) \leq \sum_{i=1}^{n} \left\langle \phi_{i}(\boldsymbol{\xi}_{i};\boldsymbol{\theta}^{\mathrm{ne}},\boldsymbol{\lambda}^{\mathrm{ne}}) - \nabla_{\boldsymbol{\theta}_{i}} J_{i}\left(\boldsymbol{\xi}_{i};\boldsymbol{\theta}^{\mathrm{ne}}\right), \boldsymbol{\theta}_{i}^{\mathrm{ne}} - \boldsymbol{\theta}_{i}^{\mathrm{pse}} \right\rangle. \tag{A13}$$
+−
+
+m
+X
+
+j=1
+λne
+i
+
+n
+X
+
+i=1
+gji (θpse
+i
+) ≤−
+
+m
+X
+
+j=1
+λne
+j
+
+n
+X
+
+i=1
+gji (θne
+i ) −
+
+n
+X
+
+i=1
+
+* m
+X
+
+j=1
+λne
+j ∇gji (θne
+i ) , θpse
+i
+−θne
+i
+
++
+
+=
+
+n
+X
+
+i=1
+
+D
+∇gi (θne
+i )⊤λne, θne
+i −θpse
+i
+E
+,
+
+where the equality follows from that Pm
+j=1 λne
+j
+Pn
+i=1 gji (θne
+i ) = (λne)⊤g (θne) = 0, which holds
+
+by the complementary slackness condition of the Lagrangian L(i)
+θi,θne
+−i(θi, θne
+−i, λ) for all i ∈[n].
+Similar to (A12), we have
+
+−(λne)⊤g (θpse) ≤
+
+n
+X
+
+i=1
+⟨φi(ξi; θne, λne) −∇θiJi (ξi; θne) , θne
+i −θpse
+i
+⟩.
+(A13)
 
 Combining (A12) and (A13) yields
 
-$$\begin{aligned} \left(\boldsymbol{\lambda}^{\text{pse}} - \boldsymbol{\lambda}^{\text{ne}}\right)^{\top} \boldsymbol{g}\left(\boldsymbol{\theta}^{\text{pse}}\right) & \leq \sum_{i=1}^{n} \left\langle \phi_{i}(\boldsymbol{\xi}_{i};\boldsymbol{\theta}^{\text{pse}},\boldsymbol{\lambda}^{\text{pse}}) - \phi_{i}(\boldsymbol{\xi}_{i};\boldsymbol{\theta}^{\text{ne}},\boldsymbol{\lambda}^{\text{ne}}),\boldsymbol{\theta}_{i}^{\text{pse}} - \boldsymbol{\theta}_{i}^{\text{ne}} \right) \\ & - \sum_{i=1}^{n} \left\langle \nabla_{\boldsymbol{\theta}_{i}} J_{i}\left(\boldsymbol{\xi}_{i};\boldsymbol{\theta}^{\text{pse}}\right) - \nabla_{\boldsymbol{\theta}_{i}} J_{i}\left(\boldsymbol{\xi}_{i};\boldsymbol{\theta}^{\text{ne}}\right), \boldsymbol{\theta}_{i}^{\text{pse}} - \boldsymbol{\theta}_{i}^{\text{ne}} \right\rangle. \end{aligned}$$
+(λpse −λne)⊤g (θpse) ≤
 
-Taking expectation on both sides of the above inequality over the distribution  $\mathcal{D}_i(\boldsymbol{\theta}^{\text{pse}})$  for all  $i \in [n]$  gives
+n
+X
 
-$$(\boldsymbol{\lambda}^{\text{pse}} - \boldsymbol{\lambda}^{\text{ne}})^{\top} \boldsymbol{g} (\boldsymbol{\theta}^{\text{pse}}) \leq \sum_{i=1}^{n} \mathbb{E}_{\boldsymbol{\xi}_{i} \sim \mathcal{D}_{i}(\boldsymbol{\theta}^{\text{pse}})} \langle \phi_{i}(\boldsymbol{\xi}_{i}; \boldsymbol{\theta}^{\text{pse}}, \boldsymbol{\lambda}^{\text{pse}}) - \phi_{i}(\boldsymbol{\xi}_{i}; \boldsymbol{\theta}^{\text{ne}}, \boldsymbol{\lambda}^{\text{ne}}), \boldsymbol{\theta}_{i}^{\text{pse}} - \boldsymbol{\theta}_{i}^{\text{ne}} \rangle$$
+i=1
+⟨φi(ξi; θpse, λpse) −φi(ξi; θne, λne), θpse
+i
+−θne
+i ⟩
 
-$$- \sum_{i=1}^{n} \left\langle G_{\boldsymbol{\theta}^{\text{pse}}}^{(i)} (\boldsymbol{\theta}^{\text{pse}}) - G_{\boldsymbol{\theta}^{\text{pse}}}^{(i)} (\boldsymbol{\theta}^{\text{ne}}), \boldsymbol{\theta}_{i}^{\text{pse}} - \boldsymbol{\theta}_{i}^{\text{ne}} \right\rangle.$$
+−
+
+n
+X
+
+i=1
+⟨∇θiJi (ξi; θpse) −∇θiJi (ξi; θne) , θpse
+i
+−θne
+i ⟩.
+
+16
+
+
+---Page Break---
+Taking expectation on both sides of the above inequality over the distribution Di(θpse) for all i ∈[n]
+gives
+
+(λpse −λne)⊤g (θpse) ≤
+
+n
+X
+
+i=1
+Eξi∼Di(θpse) ⟨φi(ξi; θpse, λpse) −φi(ξi; θne, λne), θpse
+i
+−θne
+i ⟩
+
+−
+
+n
+X
+
+i=1
+
+D
+G(i)
+θpse (θpse) −G(i)
+θpse (θne) , θpse
+i
+−θne
+i
+E
+.
 (A14)
 
-Since  $(\boldsymbol{\theta}_i^{\text{pse}}, \boldsymbol{\lambda}^{\text{pse}})$  is a saddle point of the Lagrangian  $\mathcal{L}_{\boldsymbol{\theta}^{\text{pse}}}^{(i)}(\boldsymbol{\theta}^{\text{pse}}, \boldsymbol{\lambda}^{\text{pse}})$  given  $\boldsymbol{\xi}_i \sim \mathcal{D}_i(\boldsymbol{\theta}^{\text{pse}})$ , we have that
+Since (θpse
+i
+, λpse) is a saddle point of the Lagrangian L(i)
+θpse(θpse, λpse) given ξi ∼Di(θpse), we
+have that
 
-<span id="page-16-3"></span><span id="page-16-1"></span><span id="page-16-0"></span>
-$$\mathbb{E}_{\boldsymbol{\xi}_{i} \sim \mathcal{D}_{i}(\boldsymbol{\theta}^{\text{pse}})} \left\langle \phi_{i}(\boldsymbol{\xi}_{i}; \boldsymbol{\theta}^{\text{pse}}, \boldsymbol{\lambda}^{\text{pse}}), \boldsymbol{\theta}_{i}^{\text{pse}} - \boldsymbol{\theta}_{i}^{\text{ne}} \right\rangle \leq 0, \forall i \in [n]. \tag{A15}$$
+Eξi∼Di(θpse) ⟨φi(ξi; θpse, λpse), θpse
+i
+−θne
+i ⟩≤0, ∀i ∈[n].
+(A15)
 
-Furthermore, for any  $i \in [n]$ , we have
+Furthermore, for any i ∈[n], we have
 
-$$\mathbb{E}_{\boldsymbol{\xi}_{i} \sim \mathcal{D}_{i}(\boldsymbol{\theta}^{\text{pse}})} \phi_{i}(\boldsymbol{\xi}_{i}; \boldsymbol{\theta}^{\text{ne}}, \boldsymbol{\lambda}^{\text{ne}}) = G_{\boldsymbol{\theta}^{\text{pse}}}^{(i)}(\boldsymbol{\theta}^{\text{ne}}) + \nabla \boldsymbol{g}_{i}(\boldsymbol{\theta}_{i}^{\text{ne}})^{\top} \boldsymbol{\lambda}^{\text{ne}} + \nabla_{\boldsymbol{\theta}_{i}} \text{PR}_{i}(\boldsymbol{\theta}_{i}^{\text{ne}}, \boldsymbol{\theta}_{-i}^{\text{ne}}) - \nabla_{\boldsymbol{\theta}_{i}} \text{PR}_{i}(\boldsymbol{\theta}_{i}^{\text{ne}}, \boldsymbol{\theta}_{-i}^{\text{ne}}).$$
+Eξi∼Di(θpse)φi(ξi; θne, λne) = G(i)
+θpse (θne) + ∇gi(θne
+i )⊤λne
+
++ ∇θiPRi(θne
+i , θne
+−i) −∇θiPRi(θne
+i , θne
+−i).
 (A16)
 
-Since  $(\boldsymbol{\theta}_{i}^{\mathrm{ne}}, \boldsymbol{\lambda}^{\mathrm{ne}})$  is a saddle point of the Lagrangian  $\mathcal{L}_{\boldsymbol{\theta}_{i}, \boldsymbol{\theta}_{-i}^{\mathrm{ne}}}^{(i)}(\boldsymbol{\theta}_{i}, \boldsymbol{\theta}_{-i}^{\mathrm{ne}}, \boldsymbol{\lambda}^{\mathrm{ne}})$  with decision-dependent distribution  $\mathcal{D}_{i}(\boldsymbol{\theta}_{i}, \boldsymbol{\theta}_{-i}^{\mathrm{ne}})$ , we have that
+Since (θne
+i , λne) is a saddle point of the Lagrangian L(i)
+θi,θne
+−i(θi, θne
+−i, λne) with decision-dependent
+distribution Di(θi, θne
+−i), we have that
 
-$$-\left\langle \nabla_{\boldsymbol{\theta}_{i}} \operatorname{PR}_{i}(\boldsymbol{\theta}_{i}^{\operatorname{ne}}, \boldsymbol{\theta}_{-i}^{\operatorname{ne}}) + \nabla \boldsymbol{g}_{i}(\boldsymbol{\theta}_{i}^{\operatorname{ne}})^{\top} \boldsymbol{\lambda}^{\operatorname{ne}}, \boldsymbol{\theta}_{i}^{\operatorname{pse}} - \boldsymbol{\theta}_{i}^{\operatorname{ne}} \right\rangle \leq 0, \forall i \in [n]. \tag{A17}$$
+−
+
+∇θiPRi(θne
+i , θne
+−i) + ∇gi(θne
+i )⊤λne, θpse
+i
+−θne
+i
+
+≤0, ∀i ∈[n].
+(A17)
 
 Plugging (A15), (A16), and (A17) into (A14) yields
 
-<span id="page-16-2"></span>
-$$\begin{split} &0 \leq \left(\boldsymbol{\lambda}^{\text{pse}} - \boldsymbol{\lambda}^{\text{ne}}\right)^{\top} \boldsymbol{g} \left(\boldsymbol{\theta}^{\text{pse}}\right) \\ &\leq \sum_{i=1}^{n} \left\langle \nabla_{i} \text{PR}_{i} (\boldsymbol{\theta}_{i}^{\text{ne}}, \boldsymbol{\theta}_{-i}^{\text{ne}}) - G_{\boldsymbol{\theta}^{\text{pse}}}^{(i)} \left(\boldsymbol{\theta}^{\text{ne}}\right), \boldsymbol{\theta}_{i}^{\text{pse}} - \boldsymbol{\theta}_{i}^{\text{ne}} \right\rangle \\ &- \sum_{i=1}^{n} \left\langle G_{\boldsymbol{\theta}^{\text{pse}}}^{(i)} \left(\boldsymbol{\theta}^{\text{pse}}\right) - G_{\boldsymbol{\theta}^{\text{pse}}}^{(i)} \left(\boldsymbol{\theta}^{\text{ne}}\right), \boldsymbol{\theta}_{i}^{\text{pse}} - \boldsymbol{\theta}_{i}^{\text{ne}} \right\rangle \\ &= \sum_{i=1}^{n} \left\langle H_{\boldsymbol{\theta}^{\text{ne}}}^{(i)} \left(\boldsymbol{\theta}^{\text{ne}}\right) + G_{\boldsymbol{\theta}^{\text{ne}}}^{(i)} \left(\boldsymbol{\theta}^{\text{ne}}\right) - G_{\boldsymbol{\theta}^{\text{pse}}}^{(i)} \left(\boldsymbol{\theta}^{\text{pse}}\right), \boldsymbol{\theta}_{i}^{\text{pse}} - \boldsymbol{\theta}_{i}^{\text{ne}} \right\rangle. \end{split}$$
+0 ≤(λpse −λne)⊤g (θpse)
+
+≤
+
+n
+X
+
+i=1
+
+D
+∇iPRi(θne
+i , θne
+−i) −G(i)
+θpse (θne) , θpse
+i
+−θne
+i
+E
+
+−
+
+n
+X
+
+i=1
+
+D
+G(i)
+θpse (θpse) −G(i)
+θpse (θne) , θpse
+i
+−θne
+i
+E
+
+=
+
+n
+X
+
+i=1
+
+D
+H(i)
+θne(θne) + G(i)
+θne (θne) −G(i)
+θpse (θpse) , θpse
+i
+−θne
+i
+E
+.
 
 Then, we have
 
-$$\langle G_{\boldsymbol{\theta}^{\mathrm{pse}}} \left( \boldsymbol{\theta}^{\mathrm{pse}} \right) - G_{\boldsymbol{\theta}^{\mathrm{ne}}} \left( \boldsymbol{\theta}^{\mathrm{ne}} \right), \boldsymbol{\theta}^{\mathrm{pse}} - \boldsymbol{\theta}^{\mathrm{ne}} \rangle \leq \langle H_{\boldsymbol{\theta}^{\mathrm{ne}}} (\boldsymbol{\theta}^{\mathrm{ne}}), \boldsymbol{\theta}^{\mathrm{pse}} - \boldsymbol{\theta}^{\mathrm{ne}} \rangle.$$
+⟨Gθpse (θpse) −Gθne (θne) , θpse −θne⟩≤⟨Hθne(θne), θpse −θne⟩.
 
 From the result in (A6) and the Cauchy-Schwarz inequality, we have
+ 
 
-$$\left(\mu - \sum_{i=1}^n L_i \varepsilon_i \max_{j \in [n]} \sqrt{p_{ij}}\right) \|\boldsymbol{\theta}^{\mathrm{pse}} - \boldsymbol{\theta}^{\mathrm{ne}}\|_2^2 \leq \|H_{\boldsymbol{\theta}^{\mathrm{ne}}}(\boldsymbol{\theta}^{\mathrm{ne}})\|_2 \|\boldsymbol{\theta}^{\mathrm{pse}} - \boldsymbol{\theta}^{\mathrm{ne}}\|_2.$$
+µ −
 
-Since the cost function  $J_i(\cdot)$  is  $G_i$  Lipschitz for any  $i \in [n]$ , along with Assumption 2.2, we have
+n
+X
 
-$$||H_{\boldsymbol{\theta}^{\mathrm{ne}}}(\boldsymbol{\theta}^{\mathrm{ne}})||_{2} = \sqrt{\sum_{i=1}^{n} ||H_{\boldsymbol{\theta}_{i}^{\mathrm{ne}},\boldsymbol{\theta}_{-i}^{\mathrm{ne}}}^{\mathrm{ne}}(\boldsymbol{\theta}_{i}^{\mathrm{ne}},\boldsymbol{\theta}_{-i}^{\mathrm{ne}})||_{2}^{2}} \leq \sqrt{\sum_{i=1}^{n} G_{i}^{2} \varepsilon_{i}^{2} p_{ii}}.$$
+i=1
+Liεi max
+j∈[n]
+√pij
+
+!
+
+∥θpse −θne∥2
+2 ≤∥Hθne(θne)∥2∥θpse −θne∥2.
+
+Since the cost function Ji(·) is Gi Lipschitz for any i ∈[n], along with Assumption 2.2, we have
+
+∥Hθne(θne)∥2 =
+
+v
+u
+u
+t
+
+n
+X
+
+i=1
+∥H(i)
+θne
+i ,θne
+−i(θne
+i , θne
+−i)∥2
+2 ≤
+
+v
+u
+u
+t
+
+n
+X
+
+i=1
+G2
+i ε2
+i pii.
 
 Combining the above results yields
 
-$$\|\boldsymbol{\theta}^{\text{pse}} - \boldsymbol{\theta}^{\text{ne}}\|_{2} \leq \frac{\sqrt{\sum_{i=1}^{n} G_{i}^{2} \varepsilon_{i}^{2} p_{ii}}}{\mu - \sum_{i=1}^{n} L_{i} \varepsilon_{i} \max_{j \in [n]} \sqrt{p_{ij}}}.$$
+∥θpse −θne∥2 ≤
+
+pPn
+i=1 G2
+i ε2
+i pii
+µ −Pn
+i=1 Liεi maxj∈[n] √pij
+.
 
 Further, from Assumption 2.2, we have
 
-$$\begin{aligned} |\operatorname{PR}_{i}(\boldsymbol{\theta}^{\operatorname{pse}}) - \operatorname{PR}_{i}(\boldsymbol{\theta}^{\operatorname{ne}})| &\leq G_{i} \|\boldsymbol{\theta}^{\operatorname{pse}} - \boldsymbol{\theta}^{\operatorname{ne}}\|_{2} + G_{i} \varepsilon_{i} \sqrt{\sum_{j=1}^{n} p_{ij} \|\boldsymbol{\theta}_{j}^{\operatorname{pse}} - \boldsymbol{\theta}_{j}^{\operatorname{ne}}\|_{2}^{2}} \\ &\leq G_{i} \left(1 + \varepsilon_{i} \max_{j \in [n]} \sqrt{p_{ij}}\right) \|\boldsymbol{\theta}^{\operatorname{pse}} - \boldsymbol{\theta}^{\operatorname{ne}}\|_{2}. \end{aligned}$$
+|PRi(θpse) −PRi(θne)| ≤Gi∥θpse −θne∥2 + Giεi
 
+v
+u
+u
+t
+
+n
+X
+
+j=1
+pij
+θpse
+j
+−θne
+j
+2
+
+2
+
+≤Gi
+
+
+1 + εi max
+j∈[n]
+√pij
+
+
+∥θpse −θne∥2.
+
+17
+
+
+---Page Break---
 Then, we have
 
-$$\begin{split} |\operatorname{PR}(\boldsymbol{\theta}^{\operatorname{pse}}) - \operatorname{PR}(\boldsymbol{\theta}^{\operatorname{ne}})| &= \sum_{i=1}^{n} |\operatorname{PR}_{i}(\boldsymbol{\theta}^{\operatorname{pse}}) - \operatorname{PR}_{i}(\boldsymbol{\theta}^{\operatorname{ne}})| \\ &\leq \left( \sum_{i=1}^{n} G_{i} \left( 1 + \varepsilon_{i} \max_{j \in [n]} \sqrt{p_{ij}} \right) \right) \frac{\sqrt{\sum_{i=1}^{n} G_{i}^{2} \varepsilon_{i}^{2} p_{ii}}}{\mu - \sum_{i=1}^{n} L_{i} \varepsilon_{i} \max_{j \in [n]} \sqrt{p_{ij}}}. \end{split}$$
+|PR(θpse) −PR(θne)| =
 
-### <span id="page-17-0"></span>E Convergence of the Decentralized Stochastic Primal-Dual Algorithm
+n
+X
+
+i=1
+|PRi(θpse) −PRi(θne)|
+
+≤
+
+ n
+X
+
+i=1
+Gi
+
+
+1 + εi max
+j∈[n]
+√pij
+
+!
+pPn
+i=1 G2
+i ε2
+i pii
+µ −Pn
+i=1 Liεi maxj∈[n] √pij
+.
+
+E
+Convergence of the Decentralized Stochastic Primal-Dual Algorithm
 
 The proof of this section utilizes the following supporting lemmas.
+Lemma E.1. Based on the update rule of the dual variable λ in Algorithm 1, for any γt ≥0,
+λt
+i ∈Rm
++, i ∈[n], and t ∈[T], we have that Pn
+i=1 ∥γtλt
+i∥2
+2 ≤nB2.
 
-<span id="page-17-2"></span>**Lemma E.1.** Based on the update rule of the dual variable  $\lambda$  in Algorithm 1, for any  $\gamma_t \geq 0$ ,  $\lambda_i^t \in \mathbb{R}_+^m$ ,  $i \in [n]$ , and  $t \in [T]$ , we have that  $\sum_{i=1}^n \|\gamma_t \lambda_i^t\|_2^2 \leq nB^2$ .
+Lemma E.2. Deﬁne λ
+t := 1
 
-<span id="page-17-3"></span>**Lemma E.2.** Define  $\overline{\lambda}^t := \frac{1}{n} \sum_{i=1}^n \lambda_i^t$  the average of the dual variable over all players at the tth iteration. Then, for any  $\gamma_t \geq 0$  and  $t \in [T]$ , we have the following relationship:
+n
+Pn
+i=1 λt
+i the average of the dual variable over all players at the tth
+iteration. Then, for any γt ≥0 and t ∈[T], we have the following relationship:
 
-$$-\sum_{t=1}^{T}\sum_{i=1}^{n}\gamma_{t}(\boldsymbol{\lambda}_{i}^{t})^{\top}\boldsymbol{g}_{i}(\boldsymbol{\theta}_{i}^{t}) \leq -\sum_{t=1}^{T}\sum_{i=1}^{n}\gamma_{t}\boldsymbol{\lambda}^{\top}\boldsymbol{g}_{i}\left(\boldsymbol{\theta}_{i}^{t}\right) + \frac{n}{2}\left(1 + \sum_{t=1}^{T}\gamma_{t}^{2}\right)\|\boldsymbol{\lambda}\|_{2}^{2} + \frac{9}{2}\sum_{t=1}^{T}\sum_{i=1}^{n}\left\|\boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t}\right\|_{2}^{2} + 2(1 + \sqrt{n})B\sum_{t=1}^{T}\gamma_{t}\sum_{i=1}^{n}\left\|\boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t}\right\|_{2} + 4nB^{2}\sum_{t=1}^{T}\gamma_{t}^{2}.$$
+−
+
+T
+X
+
+t=1
+
+n
+X
+
+i=1
+γt(λt
+i)⊤gi(θt
+i) ≤−
+
+T
+X
+
+t=1
+
+n
+X
+
+i=1
+γtλ⊤gi
+ 
+θt
+i
+
++ n
+
+2
+
+ 
+
+1 +
+
+T
+X
+
+t=1
+γ2
+t
+
+!
+
+∥λ∥2
+2 + 9
+
+2
+
+T
+X
+
+t=1
+
+n
+X
+
+i=1
+
+λt
+i −λ
+t
+2
+
+2
+
++ 2(1 + √n)B
+
+T
+X
+
+t=1
+γt
+
+n
+X
+
+i=1
+
+λt
+i −λ
+t
+2 + 4nB2
+T
+X
+
+t=1
+γ2
+t .
 
 Moreover, we require the following Lemma on the weight matrix A.
-
-<span id="page-17-1"></span>**Lemma E.3.** Let  $\sigma_2(\mathbf{A})$  denote the second-largest eigenvalue of the weight matrix  $\mathbf{A}$ . Since  $\mathbf{A}$  is assumed to be doubly stochastic, it holds that  $\sigma_2(\mathbf{A}) < 1$  (Horn and Johnson, 2012). Furthermore, for any  $i \in [n]$ , we construct a weight matrix  $\mathbf{A}_i^-$  by removing the ith row and column of  $\mathbf{A}$ . Let  $\beta$  represent the maximum eigenvalue of  $\mathbf{A}_i^-$  for all  $i \in [n]$ . It has been established in Hong et al. (2006, Lemma 3) that  $\beta < 1$ .
+Lemma E.3. Let σ2(A) denote the second-largest eigenvalue of the weight matrix A. Since A is
+assumed to be doubly stochastic, it holds that σ2(A) < 1 (Horn and Johnson, 2012). Furthermore,
+for any i ∈[n], we construct a weight matrix A−
+i by removing the ith row and column of A. Let β
+represent the maximum eigenvalue of A−
+i for all i ∈[n]. It has been established in Hong et al. (2006,
+Lemma 3) that β < 1.
 
 With Lemma E.3, we have the following results.
 
-<span id="page-17-4"></span>**Lemma E.4.** Define  $e^t_{ih} := \widehat{\theta}^t_{ih} - \theta^t_h$  the estimation error of player i on the decision of player h at the tth iteration, for all  $i,h \in [n]$  and  $t \in [T]$ . Let  $e^t_h$  denote the concatenation of  $e^t_{ih}$  that  $e^t_h := \operatorname{col}\left(e^t_{1h}, \cdots, e^t_{(h-1)h}, e^t_{(h+1)h}, \cdots, e^t_{nh}\right)$ . Then, the sum of  $\|e^t_h\|_2$  over  $h \in [n]$  and  $t \in [T]$  satisfies
+Lemma E.4. Deﬁne et
+ih := bθ
+t
+ih −θt
+h the estimation error of player i on the decision of player
+h at the tth iteration, for all i, h ∈[n] and t ∈[T]. Let et
+h denote the concatenation of et
+ih that
 
-$$\sum_{t=1}^{T} \sum_{h=1}^{n} \mathbb{E} \| e_h^t \|_2 \le \frac{nC}{1-\beta} + \frac{n\sqrt{n-1}(G + \sqrt{n}BG_g)}{1-\beta} \sum_{t=1}^{T} \gamma_t = \mathcal{O}\left(\sum_{t=1}^{T} \gamma_t\right).$$
+et
+h := col
+
+et
+1h, · · · , et
+(h−1)h, et
+(h+1)h, · · · , et
+nh
+
+. Then, the sum of ∥et
+h∥2 over h ∈[n] and t ∈[T]
+satisﬁes
 
-Moreover, the sum of  $\|e_{ih}^t\|_2^2$  over  $h \in [n]$  and  $t \in [T]$  satisfies
+T
+X
 
-$$\sum_{t=1}^T \sum_{h=1}^n \mathbb{E} \|\boldsymbol{e}_h^t\|_2^2 \leq \frac{2nC^2}{1-\beta} + \frac{2n(n-1)(G+\sqrt{n}BG_g)^2}{(1-\beta)^2} \sum_{t=1}^T \gamma_t = \mathcal{O}\left(\sum_{t=1}^T \gamma_t\right).$$
+t=1
 
-<span id="page-17-5"></span>**Lemma E.5.** With the definition  $\overline{\lambda}^t := \frac{1}{n} \sum_{i=1}^n \lambda_i^t$ , we have the following relationship on the consensus error of the dual variable  $\lambda_i^t$ , given by  $\lambda_i^t - \overline{\lambda}^t$ , for all  $i \in [n]$  and  $t \in [T]$ :
+n
+X
 
-$$\sum_{t=1}^{T} \sum_{i=1}^{n} \left\| \boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t} \right\|_{2} \leq \frac{2(n + \sqrt{n})B}{1 - \sigma_{2}(\mathbf{A})} \sum_{t=1}^{T} \gamma_{t} = \mathcal{O}\left(\sum_{t=1}^{T} \gamma_{t}\right),$$
+h=1
+E∥et
+h∥2 ≤
+nC
+1 −β + n√n −1(G + √nBGg)
 
-$$\sum_{t=1}^{T} \sum_{i=1}^{n} \left\| \boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t} \right\|_{2}^{2} \leq \frac{4(n + \sqrt{n})^{2}B^{2}}{(1 - \sigma_{2}(\mathbf{A}))^{2}} \sum_{t=1}^{T} \gamma_{t} = \mathcal{O}\left(\sum_{t=1}^{T} \gamma_{t}\right).$$
+1 −β
 
-Next, we start the proof of Theorem 4.2. For ease of proposition, we define the following gradient mappings: for any  $t \in [T]$ ,  $\phi_i^t(\boldsymbol{\xi}_i;\boldsymbol{\theta}_i,\boldsymbol{\theta}_{-i},\boldsymbol{\lambda}) := \nabla_i J_i(\boldsymbol{\xi}_i;\boldsymbol{\theta}_i,\boldsymbol{\theta}_{-i},\boldsymbol{\theta}) + \gamma_t \nabla \boldsymbol{g}_i(\boldsymbol{\theta}_i)^{\top}\boldsymbol{\lambda}$ ,  $\phi^t(\cdot) := [\phi_1^t(\cdot),\cdots,\phi_n^t(\cdot)]^{\top}$ ,  $\Phi_{\boldsymbol{\delta}}^{i,t}(\boldsymbol{\theta},\boldsymbol{\lambda}) := G_{\boldsymbol{\delta}}^{(i)}(\boldsymbol{\theta}) + \gamma_t \nabla \boldsymbol{g}_i(\boldsymbol{\theta}_i)^{\top}\boldsymbol{\lambda}$ , and  $\Phi_{\boldsymbol{\delta}}^t(\boldsymbol{\theta},\boldsymbol{\lambda}) := \left[\Phi_{\boldsymbol{\delta}}^{1,t}(\boldsymbol{\theta},\boldsymbol{\lambda}),\cdots,\Phi_{\boldsymbol{\delta}}^{n,t}(\boldsymbol{\theta},\boldsymbol{\lambda})\right]^{\top}$ . Then, we have
+T
+X
 
-<span id="page-18-0"></span>
-$$\mathbb{E} \left\| \boldsymbol{\theta}^{t+1} - \boldsymbol{\theta}^{\text{pse}} \right\|_{2}^{2} = \sum_{i=1}^{n} \mathbb{E} \left\| P_{\Omega_{i}} \left[ \boldsymbol{\theta}_{i}^{t} - \gamma_{t} \phi_{i}^{t} \left( \boldsymbol{\xi}_{i}^{t}; \boldsymbol{\theta}_{i}^{t}, \widehat{\boldsymbol{\theta}}_{i}^{t}, \boldsymbol{\lambda}_{i}^{t} \right) \right] - P_{\Omega_{i}} \left[ \boldsymbol{\theta}_{i}^{\text{pse}} - \gamma_{t} \Phi_{\boldsymbol{\theta}^{\text{pse}}}^{i,t} \left( \boldsymbol{\theta}^{\text{pse}}, \boldsymbol{\lambda}^{\text{pse}} \right) \right] \right\|_{2}^{2}$$
+t=1
+γt = O
 
-$$\leq \mathbb{E} \left\| \boldsymbol{\theta}^{t} - \boldsymbol{\theta}^{\text{pse}} \right\|_{2}^{2} + \gamma_{t}^{2} \sum_{i=1}^{n} \mathbb{E} \left\| \phi_{i}^{t} \left( \boldsymbol{\xi}_{i}^{t}; \boldsymbol{\theta}_{i}^{t}, \widehat{\boldsymbol{\theta}}_{i}^{t}, \boldsymbol{\lambda}_{i}^{t} \right) - \Phi_{\boldsymbol{\theta}^{\text{pse}}}^{i,t} \left( \boldsymbol{\theta}^{\text{pse}}, \boldsymbol{\lambda}^{\text{pse}} \right) \right\|_{2}^{2}$$
+ T
+X
 
-$$- 2\gamma_{t} \sum_{i=1}^{n} \mathbb{E} \left\langle \boldsymbol{\theta}_{i}^{t} - \boldsymbol{\theta}_{i}^{\text{pse}}, \phi_{i}^{t} \left( \boldsymbol{\xi}_{i}^{t}; \boldsymbol{\theta}_{i}^{t}, \widehat{\boldsymbol{\theta}}_{i}^{t}, \boldsymbol{\lambda}_{i}^{t} \right) - \Phi_{\boldsymbol{\theta}^{\text{pse}}}^{i,t} \left( \boldsymbol{\theta}^{\text{pse}}, \boldsymbol{\lambda}^{\text{pse}} \right) \right\rangle. \quad (A18)$$
+t=1
+γt
+
+!
+
+.
+
+Moreover, the sum of ∥et
+ih∥2
+2 over h ∈[n] and t ∈[T] satisﬁes
+
+T
+X
+
+t=1
+
+n
+X
+
+h=1
+E∥et
+h∥2
+2 ≤2nC2
+
+1 −β + 2n(n −1)(G + √nBGg)2
+
+(1 −β)2
+
+T
+X
+
+t=1
+γt = O
+
+ T
+X
+
+t=1
+γt
+
+!
+
+.
+
+Lemma E.5. With the deﬁnition λ
+t :=
+1
+n
+Pn
+i=1 λt
+i, we have the following relationship on the
+
+consensus error of the dual variable λt
+i, given by λt
+i −λ
+t, for all i ∈[n] and t ∈[T]:
+
+T
+X
+
+t=1
+
+n
+X
+
+i=1
+
+λt
+i −λ
+t
+2 ≤2(n + √n)B
+
+1 −σ2(A)
+
+T
+X
+
+t=1
+γt = O
+
+ T
+X
+
+t=1
+γt
+
+!
+
+,
+
+T
+X
+
+t=1
+
+n
+X
+
+i=1
+
+λt
+i −λ
+t
+2
+
+2 ≤4(n + √n)2B2
+
+(1 −σ2(A))2
+
+T
+X
+
+t=1
+γt = O
+
+ T
+X
+
+t=1
+γt
+
+!
+
+.
+
+18
+
+
+---Page Break---
+Next, we start the proof of Theorem 4.2. For ease of proposition, we deﬁne the following gra-
+dient mappings: for any t ∈[T], φt
+i(ξi; θi, θ−i, λ) := ∇iJi (ξi; θi, θ−i, θ) + γt∇gi(θi)⊤λ,
+φt(·)
+:=
+[φt
+1(·), · · · , φt
+n(·)]⊤, Φi,t
+δ (θ, λ)
+:=
+G(i)
+δ (θ) + γt∇gi(θi)⊤λ, and Φt
+δ(θ, λ)
+:=
+h
+Φ1,t
+δ (θ, λ), · · · , Φn,t
+δ (θ, λ)
+i⊤
+. Then, we have
+
+E
+θt+1 −θpse2
+
+2 =
+
+n
+X
+
+i=1
+E
+PΩi
+h
+θt
+i −γtφt
+i
+
+ξt
+i; θt
+i, bθ
+t
+i, λt
+i
+i
+−PΩi
+h
+θpse
+i
+−γtΦi,t
+θpse (θpse, λpse)
+i
+2
+
+2
+
+≤E
+θt −θpse2
+2 + γ2
+t
+
+n
+X
+
+i=1
+E
+φt
+i
+
+ξt
+i; θt
+i, bθ
+t
+i, λt
+i
+
+−Φi,t
+θpse (θpse, λpse)
+
+2
+
+2
+
+−2γt
+
+n
+X
+
+i=1
+E
+D
+θt
+i −θpse
+i
+, φt
+i
+
+ξt
+i; θt
+i, bθ
+t
+i, λt
+i
+
+−Φi,t
+θpse (θpse, λpse)
+E
+.
+(A18)
 
 The second term on the right side of (A18) is handled as follows.
 
-$$\gamma_{t}^{2} \sum_{i=1}^{n} \mathbb{E} \left\| \phi_{i}^{t} \left( \boldsymbol{\xi}_{i}^{t}; \boldsymbol{\theta}_{i}^{t}, \boldsymbol{\lambda}_{i}^{t} \right) - \Phi_{\boldsymbol{\theta}^{\text{pse}}}^{i,t} \left( \boldsymbol{\theta}^{\text{pse}}, \boldsymbol{\lambda}^{\text{pse}} \right) \right\|_{2}^{2}$$
+γ2
+t
 
-$$= \gamma_{t}^{2} \sum_{i=1}^{n} \mathbb{E} \left\| \phi_{i}^{t} \left( \boldsymbol{\xi}_{i}^{t}; \boldsymbol{\theta}_{i}^{t}, \widehat{\boldsymbol{\theta}}_{i}^{t}, \boldsymbol{\lambda}_{i}^{t} \right) - \Phi_{\boldsymbol{\theta}^{t}}^{i,t} \left( \boldsymbol{\theta}_{i}^{t}, \widehat{\boldsymbol{\theta}}_{i}^{t}, \boldsymbol{\lambda}_{i}^{t} \right) + \Phi_{\boldsymbol{\theta}^{t}}^{i,t} \left( \boldsymbol{\theta}_{i}^{t}, \widehat{\boldsymbol{\theta}}_{i}^{t}, \boldsymbol{\lambda}_{i}^{t} \right) - \Phi_{\boldsymbol{\theta}^{\text{pse}}}^{i,t} \left( \boldsymbol{\theta}^{\text{pse}}, \boldsymbol{\lambda}^{\text{pse}} \right) \right\|_{2}^{2}$$
+n
+X
 
-$$\leq 3 \gamma_{t}^{2} \sum_{i=1}^{n} \mathbb{E} \left\| \phi_{i}^{t} \left( \boldsymbol{\xi}_{i}^{t}; \boldsymbol{\theta}_{i}^{t}, \widehat{\boldsymbol{\theta}}_{i}^{t}, \boldsymbol{\lambda}_{i}^{t} \right) - \Phi_{\boldsymbol{\theta}^{t}}^{i,t} \left( \boldsymbol{\theta}_{i}^{t}, \widehat{\boldsymbol{\theta}}_{i}^{t}, \boldsymbol{\lambda}_{i}^{t} \right) \right\|_{2}^{2} + 3 \gamma_{t}^{2} \sum_{i=1}^{n} \mathbb{E} \left\| G_{\boldsymbol{\theta}^{t}}^{(i)} \left( \boldsymbol{\theta}_{i}^{t}, \widehat{\boldsymbol{\theta}}_{i}^{t} \right) - G_{\boldsymbol{\theta}^{\text{pse}}}^{(i)} \left( \boldsymbol{\theta}^{\text{pse}} \right) \right\|_{2}^{2}$$
+i=1
+E
+φt
+i
+
+ξt
+i; θt
+i, bθ
+t
+i, λt
+i
+
+−Φi,t
+θpse (θpse, λpse)
+
+2
 
-$$+ 3 \gamma_{t}^{4} \sum_{i=1}^{n} \mathbb{E} \left\| \nabla \boldsymbol{g}_{i} \left( \boldsymbol{\theta}_{i}^{t} \right)^{\top} \boldsymbol{\lambda}_{i}^{t} - \nabla \boldsymbol{g}_{i} \left( \boldsymbol{\theta}_{i}^{\text{pse}} \right)^{\top} \boldsymbol{\lambda}^{\text{pse}} \right\|_{2}^{2}. \tag{A19}$$
+2
+
+= γ2
+t
+
+n
+X
+
+i=1
+E
+φt
+i
+
+ξt
+i; θt
+i, bθ
+t
+i, λt
+i
+
+−Φi,t
+θt
+
+θt
+i, bθ
+t
+i, λt
+i
+
++ Φi,t
+θt
+
+θt
+i, bθ
+t
+i, λt
+i
+
+−Φi,t
+θpse (θpse, λpse)
+
+2
+
+2
+
+≤3γ2
+t
+
+n
+X
+
+i=1
+E
+φt
+i
+
+ξt
+i; θt
+i, bθ
+t
+i, λt
+i
+
+−Φi,t
+θt
+
+θt
+i, bθ
+t
+i, λt
+i
+
+2
+
+2
+|
+{z
+}
+(a)
+
++ 3γ2
+t
+
+n
+X
+
+i=1
+E
+G(i)
+θt
+
+θt
+i, bθ
+t
+i
+
+−G(i)
+θpse (θpse)
+
+2
+
+2
+|
+{z
+}
+(b)
+
++ 3γ4
+t
+
+n
+X
+
+i=1
+E
+∇gi
+ 
+θt
+i
+⊤λt
+i −∇gi (θpse
+i
+)⊤λpse
+2
+
+2
+|
+{z
+}
+(c)
+
+.
+(A19)
 
 We have the following results on these three terms in the last inequality of (A19).
 
-<span id="page-18-1"></span>
-$$(a) = 3\gamma_t^2 \sum_{i=1}^n \mathbb{E} \left\| \nabla_{\boldsymbol{\theta}_i} J_i \left( \boldsymbol{\xi}_i^t; \boldsymbol{\theta}_i^t, \widehat{\boldsymbol{\theta}}_i^t \right) - G_{\boldsymbol{\theta}^t}^{(i)} \left( \boldsymbol{\theta}_i^t, \widehat{\boldsymbol{\theta}}_i^t \right) \right\|_2^2$$
-  
-$$\leq 3\gamma_t^2 \left( \sigma_0^2 + \sigma_1^2 \mathbb{E} \left\| \boldsymbol{\theta}^t - \boldsymbol{\theta}^{\text{pse}} \right\|_2^2 \right).$$
+(a) = 3γ2
+t
 
-$$\begin{split} (b) &= 3\gamma_{t}^{2} \sum_{i=1}^{n} \mathbb{E} \left\| G_{\boldsymbol{\theta}^{t}}^{(i)} \left(\boldsymbol{\theta}_{i}^{t}, \widehat{\boldsymbol{\theta}}_{i}^{t}\right) - G_{\boldsymbol{\theta}^{t}}^{(i)} \left(\boldsymbol{\theta}^{t}\right) + G_{\boldsymbol{\theta}^{t}}^{(i)} \left(\boldsymbol{\theta}^{t}\right) - G_{\boldsymbol{\theta}^{t}}^{(i)} \left(\boldsymbol{\theta}^{\text{pse}}\right) + G_{\boldsymbol{\theta}^{t}}^{(i)} \left(\boldsymbol{\theta}^{\text{pse}}\right) - G_{\boldsymbol{\theta}^{\text{pse}}}^{(i)} \left(\boldsymbol{\theta}^{\text{pse}}\right) \right\|_{2}^{2} \\ &\leq 9\gamma_{t}^{2} \sum_{i=1}^{n} \mathbb{E} \left( \left\| G_{\boldsymbol{\theta}^{t}}^{(i)} \left(\boldsymbol{\theta}_{i}^{t}, \widehat{\boldsymbol{\theta}}_{i}^{t}\right) - G_{\boldsymbol{\theta}^{t}}^{(i)} \left(\boldsymbol{\theta}^{t}\right) \right\|_{2}^{2} + \left\| G_{\boldsymbol{\theta}^{t}}^{(i)} \left(\boldsymbol{\theta}^{t}\right) - G_{\boldsymbol{\theta}^{t}}^{(i)} \left(\boldsymbol{\theta}^{\text{pse}}\right) \right\|_{2}^{2} + \left\| G_{\boldsymbol{\theta}^{t}}^{(i)} \left(\boldsymbol{\theta}^{\text{pse}}\right) - G_{\boldsymbol{\theta}^{\text{pse}}}^{(i)} \left(\boldsymbol{\theta}^{\text{pse}}\right) \right\|_{2}^{2} \right) \\ &\leq 9\gamma_{t}^{2} \sum_{i=1}^{n} \mathbb{E} \left( L_{i}^{2} \left\| \widehat{\boldsymbol{\theta}}_{i}^{t} - \boldsymbol{\theta}_{-i}^{t} \right\|_{2}^{2} + L_{i}^{2} \left\| \boldsymbol{\theta}^{t} - \boldsymbol{\theta}^{\text{pse}} \right\|_{2}^{2} + L_{i}^{2} \varepsilon_{i}^{2} \max_{j \in [n]} p_{ij} \left\| \boldsymbol{\theta}^{t} - \boldsymbol{\theta}^{\text{pse}} \right\|_{2}^{2} \right), \end{split}$$
+n
+X
 
-where the last inequality is based on Assumptions 2.2 and 2.4. Further, since the constriant function  $g_i(\cdot)$  is  $G_q$  Lipschitz for all  $i \in [n]$ , we have that
+i=1
+E
+∇θiJi
+
+ξt
+i; θt
+i, bθ
+t
+i
+
+−G(i)
+θt
+
+θt
+i, bθ
+t
+i
+
+2
 
-$$\begin{split} &(c) \leq 6\gamma_t^4 \sum_{i=1}^n \mathbb{E} \left\| \nabla \boldsymbol{g}_i \left( \boldsymbol{\theta}_i^t \right)^\top \boldsymbol{\lambda}_i^t \right\|_2^2 + 6\gamma_t^4 \sum_{i=1}^n \mathbb{E} \left\| \nabla \boldsymbol{g}_i \left( \boldsymbol{\theta}_i^{\text{pse}} \right)^\top \boldsymbol{\lambda}^{\text{pse}} \right\|_2^2 \\ &\leq 6\gamma_t^2 G_g^2 \sum_{i=1}^n \mathbb{E} \| \gamma_t \boldsymbol{\lambda}_i^t \|_2^2 + 6\gamma_t^4 n G_g^2 \| \boldsymbol{\lambda}^{\text{pse}} \|_2^2 \\ &\leq 6\gamma_t^2 n B^2 G_g^2 + 6\gamma_t^4 n G_g^2 \| \boldsymbol{\lambda}^{\text{pse}} \|_2^2, \end{split}$$
+2
 
+≤3γ2
+t
+
+σ2
+0 + σ2
+1E
+θt −θpse2
+2
+
+
+.
+
+(b) = 3γ2
+t
+
+n
+X
+
+i=1
+E
+G(i)
+θt
+
+θt
+i, bθ
+t
+i
+
+−G(i)
+θt
+ 
+θt
++ G(i)
+θt
+ 
+θt
+−G(i)
+θt (θpse) + G(i)
+θt (θpse) −G(i)
+θpse (θpse)
+
+2
+
+2
+
+≤9γ2
+t
+
+n
+X
+
+i=1
+E
+G(i)
+θt
+
+θt
+i, bθ
+t
+i
+
+−G(i)
+θt
+ 
+θt
+2
+
+2 +
+G(i)
+θt
+ 
+θt
+−G(i)
+θt (θpse)
+
+2
+
+2 +
+G(i)
+θt (θpse) −G(i)
+θpse (θpse)
+
+2
+
+2
+
+
+
+≤9γ2
+t
+
+n
+X
+
+i=1
+E
+
+L2
+i
+bθ
+t
+i −θt
+−i
+
+2
+
+2 + L2
+i
+θt −θpse2
+2 + L2
+i ε2
+i max
+j∈[n] pij
+θt −θpse2
+2
+
+
+,
+
+where the last inequality is based on Assumptions 2.2 and 2.4. Further, since the constriant function
+gi(·) is Gg Lipschitz for all i ∈[n], we have that
+
+(c) ≤6γ4
+t
+
+n
+X
+
+i=1
+E
+∇gi
+ 
+θt
+i
+⊤λt
+i
+
+2
+
+2 + 6γ4
+t
+
+n
+X
+
+i=1
+E
+∇gi (θpse
+i
+)⊤λpse
+2
+
+2
+
+≤6γ2
+t G2
+g
+
+n
+X
+
+i=1
+E∥γtλt
+i∥2
+2 + 6γ4
+t nG2
+g∥λpse∥2
+2
+
+≤6γ2
+t nB2G2
+g + 6γ4
+t nG2
+g∥λpse∥2
+2,
+
+19
+
+
+---Page Break---
 where the last inequality is based on Lemma E.1.
 
 Plugging the results of (a), (b), and (c) into (A19) gives
 
-<span id="page-19-0"></span>
-$$\gamma_{t}^{2} \sum_{i=1}^{n} \mathbb{E} \left\| \phi_{i}^{t} \left( \boldsymbol{\xi}_{i}^{t}; \boldsymbol{\theta}_{i}^{t}, \boldsymbol{\lambda}_{i}^{t} \right) - \Phi_{\boldsymbol{\theta}^{\text{pse}}}^{i,t} \left( \boldsymbol{\theta}^{\text{pse}}, \boldsymbol{\lambda}^{\text{pse}} \right) \right\|_{2}^{2}$$
+γ2
+t
 
-$$\leq 3\gamma_{t}^{2} \sigma_{0}^{2} + 3\gamma_{t}^{2} \left( \sigma_{1}^{2} + 3\sum_{i=1}^{n} L_{i}^{2} \left( 1 + \varepsilon_{i}^{2} \max_{j \in [n]} p_{ij} \right) \right) \mathbb{E} \left\| \boldsymbol{\theta}^{t} - \boldsymbol{\theta}^{\text{pse}} \right\|_{2}^{2}$$
+n
+X
 
-$$+ 9\gamma_{t}^{2} \sum_{i=1}^{n} L_{i}^{2} \mathbb{E} \left\| \widehat{\boldsymbol{\theta}}_{i}^{t} - \boldsymbol{\theta}_{-i}^{t} \right\|_{2}^{2} + 6\gamma_{t}^{2} n B^{2} G_{g}^{2} + 6\gamma_{t}^{4} n G_{g}^{2} \| \boldsymbol{\lambda}^{\text{pse}} \|_{2}^{2}. \tag{A20}$$
+i=1
+E
+φt
+i
+
+ξt
+i; θt
+i, bθ
+t
+i, λt
+i
+
+−Φi,t
+θpse (θpse, λpse)
+
+2
+
+2
+
+≤3γ2
+t σ2
+0 + 3γ2
+t
+
+ 
+
+σ2
+1 + 3
+
+n
+X
+
+i=1
+L2
+i
+
+
+1 + ε2
+i max
+j∈[n] pij
+
+!
+
+E
+θt −θpse2
+2
+
++ 9γ2
+t
+
+n
+X
+
+i=1
+L2
+i E
+bθ
+t
+i −θt
+−i
+
+2
+
+2 + 6γ2
+t nB2G2
+g + 6γ4
+t nG2
+g∥λpse∥2
+2.
+(A20)
 
 Next, we deal with the last term on the right side of (A18). First, we have the following inequality:
 
-$$\begin{split} & \mathbb{E}\left[\phi_{i}^{t}\left(\boldsymbol{\xi}_{i}^{t};\boldsymbol{\theta}_{i}^{t},\widehat{\boldsymbol{\theta}}_{i}^{t},\boldsymbol{\lambda}_{i}^{t}\right) - \Phi_{\boldsymbol{\theta}^{\mathrm{pse}}}^{i,t}\left(\boldsymbol{\theta}^{\mathrm{pse}},\boldsymbol{\lambda}^{\mathrm{pse}}\right)\right] \\ & = \mathbb{E}\left[G_{\boldsymbol{\theta}^{t}}^{(i)}\left(\boldsymbol{\theta}_{i}^{t},\widehat{\boldsymbol{\theta}}_{i}^{t}\right) - G_{\boldsymbol{\theta}^{\mathrm{pse}}}^{(i)}\left(\boldsymbol{\theta}^{\mathrm{pse}}\right)\right] + \gamma_{t}\mathbb{E}\left[\nabla\boldsymbol{g}_{i}\left(\boldsymbol{\theta}_{i}^{t}\right)^{\top}\boldsymbol{\lambda}_{i}^{t} - \nabla\boldsymbol{g}_{i}\left(\boldsymbol{\theta}_{i}^{\mathrm{pse}}\right)^{\top}\boldsymbol{\lambda}^{\mathrm{pse}}\right]. \end{split}$$
+E
+h
+φt
+i
+
+ξt
+i; θt
+i, bθ
+t
+i, λt
+i
+
+−Φi,t
+θpse (θpse, λpse)
+i
+
+= E
+h
+G(i)
+θt
+
+θt
+i, bθ
+t
+i
+
+−G(i)
+θpse (θpse)
+i
++ γtE
+h
+∇gi
+ 
+θt
+i
+⊤λt
+i −∇gi (θpse
+i
+)⊤λpsei
+.
 
 Moreover, we have
 
-$$-2\gamma_{t}\sum_{i=1}^{n}\mathbb{E}\left\langle\boldsymbol{\theta}_{i}^{t}-\boldsymbol{\theta}_{i}^{\text{pse}},G_{\boldsymbol{\theta}^{t}}^{(i)}\left(\boldsymbol{\theta}_{i}^{t},\widehat{\boldsymbol{\theta}}_{i}^{t}\right)-G_{\boldsymbol{\theta}^{\text{pse}}}^{(i)}\left(\boldsymbol{\theta}^{\text{pse}}\right)\right\rangle$$
+−2γt
 
-$$=-2\gamma_{t}\sum_{i=1}^{n}\mathbb{E}\left\langle\boldsymbol{\theta}_{i}^{t}-\boldsymbol{\theta}_{i}^{\text{pse}},G_{\boldsymbol{\theta}^{t}}^{(i)}\left(\boldsymbol{\theta}_{i}^{t},\widehat{\boldsymbol{\theta}}_{i}^{t}\right)-G_{\boldsymbol{\theta}^{t}}^{(i)}\left(\boldsymbol{\theta}^{t}\right)\right\rangle-2\gamma_{t}\mathbb{E}\left\langle\boldsymbol{\theta}^{t}-\boldsymbol{\theta}^{\text{pse}},G_{\boldsymbol{\theta}^{t}}\left(\boldsymbol{\theta}^{t}\right)-G_{\boldsymbol{\theta}^{t}}^{(i)}\left(\boldsymbol{\theta}^{t}\right)\right\rangle$$
+n
+X
 
-$$-2\gamma_{t}\mathbb{E}\left\langle\boldsymbol{\theta}^{t}-\boldsymbol{\theta}^{\text{pse}},G_{\boldsymbol{\theta}^{t}}\left(\boldsymbol{\theta}^{\text{pse}}\right)-G_{\boldsymbol{\theta}^{\text{pse}}}\left(\boldsymbol{\theta}^{\text{pse}}\right)\right\rangle$$
+i=1
+E
+D
+θt
+i −θpse
+i
+, G(i)
+θt
+
+θt
+i, bθ
+t
+i
+
+−G(i)
+θpse (θpse)
+E
 
-$$\leq 4C\gamma_{t}\sum_{i=1}^{n}L_{i}\mathbb{E}\left\|\widehat{\boldsymbol{\theta}}_{i}^{t}-\boldsymbol{\theta}_{-i}^{t}\right\|_{2}-2\mu\gamma_{t}\mathbb{E}\left\|\boldsymbol{\theta}^{t}-\boldsymbol{\theta}^{\text{pse}}\right\|_{2}^{2}+2\gamma_{t}\sum_{i=1}^{n}L_{i}\varepsilon_{i}\max_{j\in[n]}\sqrt{p_{ij}}\mathbb{E}\left\|\boldsymbol{\theta}^{t}-\boldsymbol{\theta}^{\text{pse}}\right\|_{2}^{2},$$
+= −2γt
 
-$$(A21)$$
+n
+X
 
-where the last inequality is from Assumptions 2.2, 2.3, 2.4 and the Cauchy-Schwarz inequality. Further, we have
+i=1
+E
+D
+θt
+i −θpse
+i
+, G(i)
+θt
+
+θt
+i, bθ
+t
+i
+
+−G(i)
+θt
+ 
+θtE
+−2γtE
 
-<span id="page-19-1"></span>
-$$-2\gamma_{t}^{2} \sum_{i=1}^{n} \mathbb{E} \left\langle \boldsymbol{\theta}_{i}^{t} - \boldsymbol{\theta}_{i}^{\text{pse}}, \nabla \boldsymbol{g}_{i} \left(\boldsymbol{\theta}_{i}^{t}\right)^{\top} \boldsymbol{\lambda}_{i}^{t} - \nabla \boldsymbol{g}_{i} \left(\boldsymbol{\theta}_{i}^{\text{pse}}\right)^{\top} \boldsymbol{\lambda}^{\text{pse}} \right\rangle$$
+θt −θpse, Gθt  
+θt
+−Gθt (θpse)
+
 
-$$\leq 2\gamma_{t}^{2} \sum_{i=1}^{n} \mathbb{E} \left\langle \boldsymbol{\theta}_{i}^{\text{pse}} - \boldsymbol{\theta}_{i}^{t}, \nabla \boldsymbol{g}_{i} \left(\boldsymbol{\theta}_{i}^{t}\right)^{\top} \boldsymbol{\lambda}_{i}^{t} \right\rangle + 4\gamma_{t}^{2} C G_{g} \|\boldsymbol{\lambda}^{\text{pse}}\|_{2}$$
+−2γtE
 
-$$\leq 2\gamma_{t}^{2} \sum_{i=1}^{n} \mathbb{E} \left[ \left( \boldsymbol{g}_{i} \left(\boldsymbol{\theta}_{i}^{\text{pse}}\right) - \boldsymbol{g}_{i} \left(\boldsymbol{\theta}_{i}^{t}\right) \right)^{\top} \boldsymbol{\lambda}_{i}^{t} \right] + 4\gamma_{t}^{2} C G_{g} \|\boldsymbol{\lambda}^{\text{pse}}\|_{2}$$
+θt −θpse, Gθt (θpse) −Gθpse (θpse)
+
 
-$$\leq 2\gamma_{t}^{2} \mathbb{E} \left[ \sum_{i=1}^{n} \boldsymbol{g}_{i} \left(\boldsymbol{\theta}_{i}^{\text{pse}}\right)^{\top} \left(\boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t}\right) + \boldsymbol{g} \left(\boldsymbol{\theta}^{\text{pse}}\right)^{\top} \overline{\boldsymbol{\lambda}}^{t} - \sum_{i=1}^{n} \boldsymbol{g}_{i} \left(\boldsymbol{\theta}_{i}^{t}\right)^{\top} \boldsymbol{\lambda}_{i}^{t} \right] + 4\gamma_{t}^{2} C G_{g} \|\boldsymbol{\lambda}^{\text{pse}}\|_{2}$$
+≤4Cγt
 
-$$\leq 2\gamma_{t}^{2} \sum_{i=1}^{n} \mathbb{E} \left[ \|\boldsymbol{g}_{i} \left(\boldsymbol{\theta}_{i}^{\text{pse}}\right)\|_{2} \|\boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t}\|_{2} - \boldsymbol{g}_{i} \left(\boldsymbol{\theta}_{i}^{t}\right)^{\top} \boldsymbol{\lambda}_{i}^{t} \right] + 4\gamma_{t}^{2} C G_{g} \|\boldsymbol{\lambda}^{\text{pse}}\|_{2}, \tag{A22}$$
+n
+X
 
-<span id="page-19-2"></span>where the last inequality uses the fact that  $\bm{g}\left(\bm{\theta}^{\mathrm{pse}}\right)^{\top} \overline{\bm{\lambda}}^t \leq 0.$ 
+i=1
+LiE
+bθ
+t
+i −θt
+−i
+
+2 −2µγtE
+θt −θpse2
+2 + 2γt
 
-Define  $\widetilde{\mu} := \mu - \sum_{i=1}^n L_i \varepsilon_i \max_{j \in [n]} \sqrt{p_{ij}}, \ \nu := 3 \left( \sigma_1^2 + 3 \sum_{i=1}^n L_i^2 \left( 1 + \varepsilon_i^2 \max_{j \in [n]} p_{ij} \right) \right)$ , and  $\pi := 3\sigma_0^2 + 6nB^2G_g^2 + 6nG_g^2 \|\boldsymbol{\lambda}^{\mathrm{pse}}\|_2^2 + 4CG_g \|\boldsymbol{\lambda}^{\mathrm{pse}}\|$ . Plugging the results in (A20), (A21), and
+n
+X
 
+i=1
+Liεi max
+j∈[n]
+√pijE
+θt −θpse2
+2 ,
+
+(A21)
+
+where the last inequality is from Assumptions 2.2, 2.3, 2.4 and the Cauchy-Schwarz inequality.
+
+Further, we have
+
+−2γ2
+t
+
+n
+X
+
+i=1
+E
+D
+θt
+i −θpse
+i
+, ∇gi
+ 
+θt
+i
+⊤λt
+i −∇gi (θpse
+i
+)⊤λpseE
+
+≤2γ2
+t
+
+n
+X
+
+i=1
+E
+D
+θpse
+i
+−θt
+i, ∇gi
+ 
+θt
+i
+⊤λt
+i
+E
++ 4γ2
+t CGg∥λpse∥2
+
+≤2γ2
+t
+
+n
+X
+
+i=1
+E
+h 
+gi (θpse
+i
+) −gi
+ 
+θt
+i
+⊤λt
+i
+i
++ 4γ2
+t CGg∥λpse∥2
+
+≤2γ2
+t E
+
+" n
+X
+
+i=1
+gi (θpse
+i
+)⊤
+λt
+i −λ
+t
++ g (θpse)⊤λ
+t −
+
+n
+X
+
+i=1
+gi
+ 
+θt
+i
+⊤λt
+i
+
+#
+
++ 4γ2
+t CGg∥λpse∥2
+
+≤2γ2
+t
+
+n
+X
+
+i=1
+E
+h
+∥gi (θpse
+i
+)∥2
+λt
+i −λ
+t
+2 −gi
+ 
+θt
+i
+⊤λt
+i
+i
++ 4γ2
+t CGg∥λpse∥2,
+(A22)
+
+where the last inequality uses the fact that g (θpse)⊤λ
+t ≤0.
+
+Deﬁne eµ := µ −Pn
+i=1 Liεi maxj∈[n] √pij, ν := 3
+ 
+σ2
+1 + 3 Pn
+i=1 L2
+i
+ 
+1 + ε2
+i maxj∈[n] pij
+
+, and
+π := 3σ2
+0 + 6nB2G2
+g + 6nG2
+g∥λpse∥2
+2 + 4CGg∥λpse∥. Plugging the results in (A20), (A21), and
+
+20
+
+
+---Page Break---
 (A22) into (A18) yields
 
-$$\mathbb{E} \left\| \boldsymbol{\theta}^{t+1} - \boldsymbol{\theta}^{\mathrm{pse}} \right\|_{2}^{2}$$
+E
+θt+1 −θpse2
 
-$$\leq \left(1 - 2\gamma_{t}\widetilde{\mu} + \nu\gamma_{t}^{2}\right) \mathbb{E} \left\|\boldsymbol{\theta}^{t} - \boldsymbol{\theta}^{\text{pse}}\right\|_{2}^{2} + 4C\gamma_{t} \sum_{i=1}^{n} L_{i}\mathbb{E} \left\|\widehat{\boldsymbol{\theta}}_{i}^{t} - \boldsymbol{\theta}_{-i}^{t}\right\|_{2} + 9\gamma_{t}^{2} \sum_{i=1}^{n} L_{i}^{2}\mathbb{E} \left\|\widehat{\boldsymbol{\theta}}_{i}^{t} - \boldsymbol{\theta}_{-i}^{t}\right\|_{2}^{2} + 2\gamma_{t}^{2} \sum_{i=1}^{n} \mathbb{E} \left[B \left\|\boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t}\right\|_{2} - \boldsymbol{g}_{i} \left(\boldsymbol{\theta}_{i}^{t}\right)^{\top} \boldsymbol{\lambda}_{i}^{t}\right] + \pi\gamma_{t}^{2}. \tag{A23}$$
+2
 
-Let  $\sup_{t\geq 1}\gamma_t\leq \frac{\widetilde{\mu}}{\nu}$ , then  $1-2\widetilde{\mu}\gamma_t+\nu\gamma_t^2\leq 1-\widetilde{\mu}\gamma_t$ . Thus, we have
+≤
+ 
+1 −2γteµ + νγ2
+t
+
+E
+θt −θpse2
+2 + 4Cγt
 
-$$\mathbb{E} \left\| \boldsymbol{\theta}^t - \boldsymbol{\theta}^{\mathrm{pse}} \right\|_2^2$$
+n
+X
 
-$$\leq \frac{1}{\widetilde{\mu}\gamma_{t}} \left( \mathbb{E} \left\| \boldsymbol{\theta}^{t} - \boldsymbol{\theta}^{\text{pse}} \right\|_{2}^{2} - \mathbb{E} \left\| \boldsymbol{\theta}^{t+1} - \boldsymbol{\theta}^{\text{pse}} \right\|_{2}^{2} \right) + \frac{4C}{\widetilde{\mu}} \sum_{i=1}^{n} L_{i} \mathbb{E} \left\| \widehat{\boldsymbol{\theta}}_{i}^{t} - \boldsymbol{\theta}_{-i}^{t} \right\|_{2} \\
-+ \frac{9\gamma_{t}}{\widetilde{\mu}} \sum_{i=1}^{n} L_{i}^{2} \mathbb{E} \left\| \widehat{\boldsymbol{\theta}}_{i}^{t} - \boldsymbol{\theta}_{-i}^{t} \right\|_{2}^{2} + \frac{2\gamma_{t}}{\widetilde{\mu}} \sum_{i=1}^{n} \mathbb{E} \left[ B \left\| \boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t} \right\|_{2} - \boldsymbol{g}_{i} \left( \boldsymbol{\theta}_{i}^{t} \right)^{\mathsf{T}} \boldsymbol{\lambda}_{i}^{t} \right] + \frac{\pi \gamma_{t}}{\widetilde{\mu}}.$$
+i=1
+LiE
+bθ
+t
+i −θt
+−i
+
+2 + 9γ2
+t
 
-Summing the above inequality over  $t \in [T]$  and plugging into the result of Lemma E.2 yields
+n
+X
 
-$$\sum_{t=1}^{T} \mathbb{E} \left\| \boldsymbol{\theta}^{t} - \boldsymbol{\theta}^{\text{pse}} \right\|_{2}^{2} \leq \sum_{t=1}^{T} \frac{1}{\widetilde{\mu} \gamma_{t}} \left( \mathbb{E} \left\| \boldsymbol{\theta}^{t} - \boldsymbol{\theta}^{\text{pse}} \right\|_{2}^{2} - \mathbb{E} \left\| \boldsymbol{\theta}^{t+1} - \boldsymbol{\theta}^{\text{pse}} \right\|_{2}^{2} \right) + \frac{4C}{\widetilde{\mu}} \sum_{t=1}^{T} \sum_{i=1}^{n} L_{i} \mathbb{E} \left\| \widehat{\boldsymbol{\theta}}_{i}^{t} - \boldsymbol{\theta}_{-i}^{t} \right\|_{2}^{2} + \frac{2}{\widetilde{\mu}} \left( 3 + 2\sqrt{n} \right) B \sum_{t=1}^{T} \gamma_{t} \sum_{i=1}^{n} \mathbb{E} \left\| \boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t} \right\|_{2} + \frac{9}{\widetilde{\mu}} \sum_{t=1}^{T} \sum_{i=1}^{n} \left\| \boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t} \right\|_{2}^{2} + \frac{\pi}{\widetilde{\mu}} \sum_{t=1}^{T} \gamma_{t} + \frac{8nB^{2}}{\widetilde{\mu}} \sum_{t=1}^{T} \gamma_{t}^{2} + \frac{9}{\widetilde{\mu}} \sum_{t=1}^{T} \sum_{i=1}^{n} \gamma_{t} \boldsymbol{\lambda}^{T} \boldsymbol{g}_{i}(\boldsymbol{\theta}_{i}^{t}) + \frac{n}{\widetilde{\mu}} \left( 1 + \sum_{t=1}^{T} \gamma_{t}^{2} \right) \| \boldsymbol{\lambda} \|_{2}^{2}. \tag{A24}$$
+i=1
+L2
+i E
+bθ
+t
+i −θt
+−i
+
+2
 
-Since  $\|\boldsymbol{\theta}^t - \boldsymbol{\theta}^{pse}\|_2^2 \le 4C^2$ , we have that
+2
 
-<span id="page-20-3"></span>
-$$\sum_{t=1}^{T} \frac{1}{\gamma_t} \left( \mathbb{E} \left\| \boldsymbol{\theta}^t - \boldsymbol{\theta}^{\text{pse}} \right\|_2^2 - \mathbb{E} \left\| \boldsymbol{\theta}^{t+1} - \boldsymbol{\theta}^{\text{pse}} \right\|_2^2 \right) \\
-= \frac{1}{\gamma_1} \mathbb{E} \left\| \boldsymbol{\theta}^1 - \boldsymbol{\theta}^{\text{pse}} \right\|_2^2 - \frac{1}{\gamma_T} \mathbb{E} \left\| \boldsymbol{\theta}^{T+1} - \boldsymbol{\theta}^{\text{pse}} \right\|_2^2 + \sum_{t=2}^{T} \left( \frac{1}{\gamma_t} - \frac{1}{\gamma_{t-1}} \right) \mathbb{E} \left\| \boldsymbol{\theta}^t - \boldsymbol{\theta}^{\text{pse}} \right\|_2^2 \\
-\leq \frac{1}{\gamma_1} 4C^2 + \sum_{t=2}^{T} \left( \frac{1}{\gamma_t} - \frac{1}{\gamma_{t-1}} \right) 4C^2 \leq \frac{4C^2}{\gamma_T}, \tag{A25}$$
++ 2γ2
+t
 
-where in the last inequality is based on the fact that  $\frac{1}{\gamma_t} - \frac{1}{\gamma_{t-1}} \ge 0$  because  $\gamma_t$  is a non-increasing sequence. Further, we have the following relations:
+n
+X
 
-<span id="page-20-2"></span><span id="page-20-1"></span><span id="page-20-0"></span>
-$$\sum_{i=1}^{n} L_{i}^{2} \mathbb{E} \left\| \widehat{\boldsymbol{\theta}}_{i}^{t} - \boldsymbol{\theta}_{-i}^{t} \right\|_{2}^{2} \leq \max_{i} L_{i} \sum_{i=1}^{n} \sum_{h \neq i} \left\| \widehat{\boldsymbol{\theta}}_{ih}^{t} - \boldsymbol{\theta}_{h}^{t} \right\|_{2}^{2} = \max_{i} L_{i} \sum_{h=1}^{n} \|\boldsymbol{e}_{h}^{t}\|_{2}^{2}, \tag{A26}$$
+i=1
+E
+h
+B
+λt
+i −λ
+t
+2 −gi
+ 
+θt
+i
+⊤λt
+i
+i
++ πγ2
+t .
+(A23)
 
-$$\sum_{i=1}^{n} L_{i} \mathbb{E} \left\| \widehat{\boldsymbol{\theta}}_{i}^{t} - \boldsymbol{\theta}_{-i}^{t} \right\|_{2} \leq \max_{i} L_{i} \sum_{i=1}^{n} \sqrt{\sum_{h \neq i} \left\| \widehat{\boldsymbol{\theta}}_{ih}^{t} - \boldsymbol{\theta}_{h}^{t} \right\|_{2}^{2}}$$
+Let supt≥1 γt ≤eµ
 
-$$\leq \max_{i} L_{i} \sqrt{n} \sum_{i=1}^{n} \sum_{h \neq i} \left\| \widehat{\boldsymbol{\theta}}_{ih}^{t} - \boldsymbol{\theta}_{h}^{t} \right\|_{2}^{2}$$
+ν , then 1 −2eµγt + νγ2
+t ≤1 −eµγt. Thus, we have
 
-$$\leq \max_{i} L_{i} \sqrt{n} \sum_{h=1}^{n} \|\boldsymbol{e}_{h}^{t}\|_{2}, \tag{A27}$$
+E
+θt −θpse2
+2
 
-where the last inequality is based on the fact that  $\sqrt{a+b+c} \le \sqrt{a} + \sqrt{b} + \sqrt{c}$  for any  $a,b,c \ge 0$ . Plugging (A25), (A26) and (A27) into (A24) and utilizing the results in Lemmas E.4 and E.5, we have that
+≤
+1
+eµγt
 
-$$\sum_{t=1}^{T} \mathbb{E} \left\| \boldsymbol{\theta}^{t} - \boldsymbol{\theta}^{\text{pse}} \right\|_{2}^{2} + \frac{2}{\widetilde{\mu}} \sum_{t=1}^{T} \sum_{i=1}^{n} \gamma_{t} \boldsymbol{\lambda}^{\top} \boldsymbol{g}_{i} \left( \boldsymbol{\theta}_{i}^{t} \right) - \frac{n}{\widetilde{\mu}} \left( 1 + \sum_{t=1}^{T} \gamma_{t}^{2} \right) \|\boldsymbol{\lambda}\|_{2}^{2} \\
-\leq \mathcal{O} \left( \frac{1}{\widetilde{\mu} \gamma_{T}} + \frac{1}{\widetilde{\mu}} \sum_{t=1}^{T} \gamma_{t} \right). \tag{A28}$$
+
+E
+θt −θpse2
+2 −E
+θt+1 −θpse2
 
-Since any  $\lambda \in \mathbb{R}^m_+$  satisfies the above inequality, by setting  $\lambda = \frac{\left[\sum_{t=1}^T \gamma_t \sum_{i=1}^n g_i(\theta_i^t)\right]_+}{n\left(1 + \sum_{t=1}^T \gamma_t^2\right)}$ , we have that
+2
 
-$$\frac{2}{\widetilde{\mu}} \boldsymbol{\lambda}^{\top} \left( \sum_{t=1}^{T} \gamma_{t} \sum_{i=1}^{n} \boldsymbol{g}_{i} \left( \boldsymbol{\theta}_{i}^{t} \right) \right) - \frac{n}{\widetilde{\mu}} \left( 1 + \sum_{t=1}^{T} \gamma_{t}^{2} \right) \| \boldsymbol{\lambda} \|_{2}^{2} = \frac{\left\| \left[ \sum_{t=1}^{T} \gamma_{t} \sum_{i=1}^{n} \boldsymbol{g}_{i} \left( \boldsymbol{\theta}_{i}^{t} \right) \right]_{+} \right\|_{2}^{2}}{\widetilde{\mu} n \left( 1 + \sum_{t=1}^{T} \gamma_{t}^{2} \right)}.$$
- (A29)
+
++ 4C
+
+eµ
+
+n
+X
+
+i=1
+LiE
+bθ
+t
+i −θt
+−i
+
+2
+
++ 9γt
+
+eµ
+
+n
+X
+
+i=1
+L2
+i E
+bθ
+t
+i −θt
+−i
+
+2
+
+2 + 2γt
+
+eµ
+
+n
+X
+
+i=1
+E
+h
+B
+λt
+i −λ
+t
+2 −gi
+ 
+θt
+i
+⊤λt
+i
+i
++ πγt
+
+eµ .
+
+Summing the above inequality over t ∈[T] and plugging into the result of Lemma E.2 yields
+
+T
+X
+
+t=1
+E
+θt −θpse2
+2 ≤
+
+T
+X
+
+t=1
+
+1
+eµγt
+
+
+E
+θt −θpse2
+2 −E
+θt+1 −θpse2
+
+2
+
+
++ 4C
+
+eµ
+
+T
+X
+
+t=1
+
+n
+X
+
+i=1
+LiE
+bθ
+t
+i −θt
+−i
+
+2
+
++ 9
+
+eµ
+
+T
+X
+
+t=1
+γt
+
+n
+X
+
+i=1
+L2
+i E
+bθ
+t
+i −θt
+−i
+
+2
+
+2 + 2
+
+eµ
+ 
+3 + 2√n
+
+B
+
+T
+X
+
+t=1
+γt
+
+n
+X
+
+i=1
+E
+λt
+i −λ
+t
+2
+
++ 9
+
+eµ
+
+T
+X
+
+t=1
+
+n
+X
+
+i=1
+
+λt
+i −λ
+t
+2
+
+2 + π
+
+eµ
+
+T
+X
+
+t=1
+γt + 8nB2
+
+eµ
+
+T
+X
+
+t=1
+γ2
+t
+
+−2
+
+eµ
+
+T
+X
+
+t=1
+
+n
+X
+
+i=1
+γtλ⊤gi(θt
+i) + n
+
+eµ
+
+ 
+
+1 +
+
+T
+X
+
+t=1
+γ2
+t
+
+!
+
+∥λ∥2
+2.
+(A24)
+
+Since
+θt −θpse2
+2 ≤4C2, we have that
+
+T
+X
+
+t=1
+
+1
+γt
+
+
+E
+θt −θpse2
+2 −E
+θt+1 −θpse2
+
+2
+
+
+
+= 1
+
+γ1
+E
+θ1 −θpse2
+
+2 −1
+
+γT
+E
+θT +1 −θpse
+2
+
+2 +
+
+T
+X
+
+t=2
+
+ 1
+
+γt
+−
+1
+γt−1
+
+
+E
+θt −θpse2
+2
+
+≤1
+
+γ1
+4C2 +
+
+T
+X
+
+t=2
+
+ 1
+
+γt
+−
+1
+γt−1
+
+
+4C2 ≤4C2
+
+γT
+,
+(A25)
+
+where in the last inequality is based on the fact that 1
+
+γt −
+1
+γt−1 ≥0 because γt is a non-increasing
+sequence. Further, we have the following relations:
+n
+X
+
+i=1
+L2
+i E
+bθ
+t
+i −θt
+−i
+
+2
+
+2 ≤max
+i
+Li
+
+n
+X
+
+i=1
+
+X
+
+h̸=i
+
+bθ
+t
+ih −θt
+h
+
+2
+
+2 = max
+i
+Li
+
+n
+X
+
+h=1
+∥et
+h∥2
+2,
+(A26)
+
+n
+X
+
+i=1
+LiE
+bθ
+t
+i −θt
+−i
+
+2 ≤max
+i
+Li
+
+n
+X
+
+i=1
+
+sX
+
+h̸=i
+
+bθ
+t
+ih −θt
+h
+
+2
+
+2
+
+≤max
+i
+Li
+
+v
+u
+u
+tn
+
+n
+X
+
+i=1
+
+X
+
+h̸=i
+
+bθ
+t
+ih −θt
+h
+
+2
+
+2
+
+≤max
+i
+Li
+√n
+
+n
+X
+
+h=1
+∥et
+h∥2,
+(A27)
+
+21
+
+
+---Page Break---
+where the last inequality is based on the fact that
+√
+
+a + b + c ≤√a +
+√
+
+b + √c for any a, b, c ≥0.
+Plugging (A25), (A26) and (A27) into (A24) and utilizing the results in Lemmas E.4 and E.5, we
+have that
+
+T
+X
+
+t=1
+E
+θt −θpse2
+2 + 2
+
+eµ
+
+T
+X
+
+t=1
+
+n
+X
+
+i=1
+γtλ⊤gi
+ 
+θt
+i
+
+−n
+
+eµ
+
+ 
+
+1 +
+
+T
+X
+
+t=1
+γ2
+t
+
+!
+
+∥λ∥2
+2
+
+≤O
+
+ 
+1
+eµγT
++ 1
+
+eµ
+
+T
+X
+
+t=1
+γt
+
+!
+
+.
+(A28)
+
+Since any λ ∈Rm
++ satisﬁes the above inequality, by setting λ = [
+PT
+t=1 γt
+Pn
+i=1 gi(θt
+i)]+
+n(1+PT
+t=1 γ2
+t )
+, we have that
+
+2
+eµλ⊤
+ T
+X
+
+t=1
+γt
+
+n
+X
+
+i=1
+gi
+ 
+θt
+i
+
+!
+
+−n
+
+eµ
+
+ 
+
+1 +
+
+T
+X
+
+t=1
+γ2
+t
+
+!
+
+∥λ∥2
+2 =
+
+
+hPT
+t=1 γt
+Pn
+i=1 gi
+ 
+θt
+i
+i
+
++
+
+
+
+2
+
+2
+eµn
+
+1 + PT
+t=1 γ2
+t
+
+.
+(A29)
 
 As the terms in (A29) is non-negative, omitting it in (A28) gives
 
-<span id="page-21-1"></span><span id="page-21-0"></span>
-$$\sum_{t=1}^{T} \mathbb{E} \left\| \boldsymbol{\theta}^{t} - \boldsymbol{\theta}^{\text{pse}} \right\|_{2}^{2} \leq \mathcal{O} \left( \frac{1}{\widetilde{\mu} \gamma_{T}} + \frac{1}{\widetilde{\mu}} \sum_{t=1}^{T} \gamma_{t} \right).$$
+T
+X
 
-Furthermore, since  $\mathbb{E}_{\boldsymbol{\xi}_i \sim \mathcal{D}(\boldsymbol{\theta}^{\mathrm{pse}})} |J_i(\boldsymbol{\xi}_i; \boldsymbol{\theta}_i^t, \boldsymbol{\theta}_{-i}^{\mathrm{pse}}) - J_i(\boldsymbol{\xi}_i; \boldsymbol{\theta}^{\mathrm{pse}})| \leq G_i \|\boldsymbol{\theta}_i^t - \boldsymbol{\theta}_i^{\mathrm{pse}}\|_2$ , for any  $i \in [n]$ , we have that
+t=1
+E
+θt −θpse2
+2 ≤O
 
-$$\mathcal{R}_{i}(T) = \sum_{t=1}^{T} \left( \mathbb{E}_{\boldsymbol{\xi}_{i} \sim \mathcal{D}(\boldsymbol{\theta}^{\text{pse}})} \left[ J\left(\boldsymbol{\xi}_{i}; \boldsymbol{\theta}_{i}^{t}, \boldsymbol{\theta}_{-i}^{\text{pse}}\right) - J\left(\boldsymbol{\xi}_{i}; \boldsymbol{\theta}^{\text{pse}}\right) \right] \right)$$
+ 
+1
+eµγT
++ 1
 
-$$\leq G_{i} \sum_{t=1}^{T} \left\| \boldsymbol{\theta}_{i}^{t} - \boldsymbol{\theta}_{i}^{\text{pse}} \right\|_{2}$$
+eµ
 
-$$\leq G_{i} \sqrt{T \sum_{t=1}^{T} \left\| \boldsymbol{\theta}_{i}^{t} - \boldsymbol{\theta}_{i}^{\text{pse}} \right\|_{2}^{2}}$$
+T
+X
 
-$$\leq \mathcal{O}\left(\sqrt{\frac{T}{\widetilde{\mu}} \left(\frac{1}{\gamma_{T}} + \sum_{t=1}^{T} \gamma_{t}\right)}\right), \forall i \in [n].$$
+t=1
+γt
 
-On the other hand, plugging (A29) into (A28) and omitting the non-negtive term  $\sum_{t=1}^{T} \mathbb{E} \left\| \boldsymbol{\theta}^{t} - \boldsymbol{\theta}^{\text{pse}} \right\|_{2}^{2}$ , we have
+!
 
-$$\frac{\left\|\left[\sum_{t=1}^{T} \gamma_{t} \sum_{i=1}^{n} \boldsymbol{g}_{i}\left(\boldsymbol{\theta}_{i}^{t}\right)\right]_{+}\right\|_{2}^{2}}{\widetilde{\mu}n\left(1+\sum_{t=1}^{T} \gamma_{t}^{2}\right)} \leq \mathcal{O}\left(\frac{1}{\widetilde{\mu}\gamma_{T}}+\frac{1}{\widetilde{\mu}} \sum_{t=1}^{T} \gamma_{t}\right).$$
+.
 
-$$\left\| \left[ \sum_{t=1}^{T} \gamma_{t} \sum_{i=1}^{n} \boldsymbol{g}_{i} \left( \boldsymbol{\theta}_{i}^{t} \right) \right]_{+} \right\|_{2} \leq \mathcal{O} \left( \sqrt{\left( \frac{1}{\gamma_{T}} + \sum_{t=1}^{T} \gamma_{t} \right) \left( 1 + \sum_{t=1}^{T} \gamma_{t}^{2} \right)} \right).$$
+Furthermore, since Eξi∼D(θpse)|Ji(ξi; θt
+i, θpse
+−i ) −Ji(ξi; θpse)| ≤Gi
+θt
+i −θpse
+i
+
+2, for any i ∈[n],
+we have that
+
+Ri(T) =
+
+T
+X
+
+t=1
+
+ 
+Eξi∼D(θpse)
+
+J
+ 
+ξi; θt
+i, θpse
+−i
+
+−J (ξi; θpse)
+
+
+≤Gi
+
+T
+X
+
+t=1
+
+θt
+i −θpse
+i
+
+2
+
+≤Gi
+
+v
+u
+u
+tT
+
+T
+X
+
+t=1
+
+θt
+i −θpse
+i
+2
+2
+
+≤O
+
+
+
+
+
+v
+u
+u
+tT
+
+eµ
+
+ 
+1
+γT
++
+
+T
+X
+
+t=1
+γt
+
+!
+
+, ∀i ∈[n].
+
+On
+the
+other
+hand,
+plugging
+(A29)
+into
+(A28)
+and
+omitting
+the
+non-negtive
+term
+PT
+t=1 E
+θt −θpse2
+2, we have
+
+
+hPT
+t=1 γt
+Pn
+i=1 gi
+ 
+θt
+i
+i
+
++
+
+
+
+2
+
+2
+eµn
+
+1 + PT
+t=1 γ2
+t
+
+≤O
+
+ 
+1
+eµγT
++ 1
+
+eµ
+
+T
+X
+
+t=1
+γt
+
+!
+
+.
+
+
+
+" T
+X
+
+t=1
+γt
+
+n
+X
+
+i=1
+gi
+ 
+θt
+i
+
+#
+
++
+
+
+2
+≤O
+
+
+
+
+
+v
+u
+u
+t
+
+ 
+1
+γT
++
+
+T
+X
+
+t=1
+γt
+
+!  
+
+1 +
+
+T
+X
+
+t=1
+γ2
+t
+
+!
+
+.
 
 Then, we prove that
 
-$$\mathcal{R}_g(T) \leq \mathcal{O}\left(\frac{1}{\gamma_T} \sqrt{\left(\frac{1}{\gamma_T} + \sum_{t=1}^T \gamma_t\right) \left(1 + \sum_{t=1}^T \gamma_t^2\right)}\right).$$
+Rg(T) ≤O
 
-#### E.1 Proof of Lemma E.1
+
 
-From the update rule of the dual variables, for any  $\lambda_i^t \in \mathbb{R}_+^m$ ,  $i \in [n]$ , and  $t \in [T]$ , we have that
+1
 
-$$\sum_{i=1}^{n} \|\boldsymbol{\lambda}_{i}^{t+1}\|_{2}^{2} \leq \sum_{i=1}^{n} \left\| \sum_{j=1}^{n} a_{ij} \left[ \left( 1 - \gamma_{t}^{2} \right) \boldsymbol{\lambda}_{j}^{t} + \gamma_{t} \boldsymbol{g}_{i}(\boldsymbol{\theta}_{i}^{t}) \right] \right\|_{2}^{2}$$
+γT
 
-$$\leq \sum_{i=1}^{n} \sum_{j=1}^{n} a_{ij} \left\| \left( 1 - \gamma_{t}^{2} \right) \boldsymbol{\lambda}_{j}^{t} + \gamma_{t}^{2} \frac{\boldsymbol{g}_{i}(\boldsymbol{\theta}_{i}^{t})}{\gamma_{t}} \right\|_{2}^{2}$$
+v
+u
+u
+t
 
-$$\leq \sum_{i=1}^{n} \sum_{j=1}^{n} a_{ij} \left[ \left( 1 - \gamma_{t}^{2} \right) \|\boldsymbol{\lambda}_{j}^{t}\|_{2}^{2} + \|\boldsymbol{g}_{i}(\boldsymbol{\theta}_{i}^{t})\|_{2}^{2} \right]$$
+ 
+1
+γT
++
 
-$$\leq \left( 1 - \gamma_{t}^{2} \right) \sum_{i=1}^{n} \|\boldsymbol{\lambda}_{i}^{t}\|_{2}^{2} + \sum_{i=1}^{n} \|\boldsymbol{g}_{i}(\boldsymbol{\theta}_{i}^{t})\|_{2}^{2}$$
+T
+X
 
-$$\leq \left( 1 - \gamma_{t}^{2} \right) \sum_{i=1}^{n} \|\boldsymbol{\lambda}_{i}^{t}\|_{2}^{2} + nB^{2}.$$
+t=1
+γt
 
-We next bound  $\sum_{i=1}^n \left\| \boldsymbol{\lambda}_i^t \right\|_2^2$ ,  $\forall t \in [T]$  by deduction. First, since  $\boldsymbol{\lambda}_i^1 = \mathbf{0}$ ,  $\gamma_1 \leq 1$ , and  $\|\boldsymbol{g}_i(\boldsymbol{\theta}_i^1)\|_2^2 \leq B^2$ ,  $\forall i \in [n]$ , we have that  $\sum_{i=1}^n \left\| \boldsymbol{\lambda}_i^2 \right\|_2^2 \leq \sum_{i=1}^n \left\| \boldsymbol{g}_i(\boldsymbol{\theta}_i^1) \right\|_2^2 \leq nB^2 \leq \frac{nB^2}{\gamma_1^2}$ . Assume that  $\sum_{i=1}^n \left\| \boldsymbol{\lambda}_i^t \right\|_2^2 \leq \frac{nB^2}{\gamma_{t-1}^2}$ . Since  $\{\gamma_t\}_{t \in [T]}$  is a non-incerasing sequence,  $\sum_{i=1}^n \left\| \boldsymbol{\lambda}_i^t \right\|_2^2 \leq \frac{nB^2}{\gamma_{t-1}^2} \leq \frac{nB^2}{\gamma_t^2}$  and thus  $\sum_{i=1}^n \left\| \boldsymbol{\lambda}_i^{t+1} \right\|_2^2 \leq (1-\gamma_t^2) \frac{nB^2}{\gamma_t^2} + nB^2 = \frac{nB^2}{\gamma_t^2}$ . Therefore, for any  $t \in [T]$ , we have  $\sum_{i=1}^n \left\| \boldsymbol{\lambda}_i^{t+1} \right\|_2^2 \leq \frac{nB^2}{\gamma_t^2} \leq \frac{nB^2}{\gamma_{t-1}^2}$ , i.e.,  $\sum_{i=1}^n \left\| \gamma_t \boldsymbol{\lambda}_i^t \right\|_2^2 \leq nB^2$ , which completes the proof.
+!  
 
-#### E.2 Proof of Lemma E.2
+1 +
 
-From the update rule of the dual variables  $\lambda_i$ , for any  $\lambda \in \mathbb{R}^m_+$ , we have that
+T
+X
 
-$$\sum_{i=1}^{n} \|\boldsymbol{\lambda}_{i}^{t+1} - \boldsymbol{\lambda}\|_{2}^{2} = \sum_{i=1}^{n} \left\| \left[ (1 - \gamma_{t}^{2}) \sum_{j \in \mathcal{N}_{i}} a_{ij} \boldsymbol{\lambda}_{j}^{t} + \gamma_{t} \boldsymbol{g}_{i} \left(\boldsymbol{\theta}_{i}^{t}\right) \right]_{+}^{2} - \boldsymbol{\lambda} \right\|_{2}^{2}$$
+t=1
+γ2
+t
 
-$$\leq \sum_{i=1}^{n} \left\| (1 - \gamma_{t}^{2}) \sum_{j \in \mathcal{N}_{i}} a_{ij} \left(\boldsymbol{\lambda}_{j}^{t} - \boldsymbol{\lambda}_{i}^{t}\right) + \left(\boldsymbol{\lambda}_{i}^{t} - \boldsymbol{\lambda}\right) + \gamma_{t} \left(\boldsymbol{g}_{i} \left(\boldsymbol{\theta}_{i}^{t}\right) - \gamma_{t} \boldsymbol{\lambda}_{i}^{t}\right) \right\|_{2}^{2}$$
+!
 
-$$\leq \sum_{i=1}^{n} \left( \sum_{j \in \mathcal{N}_{i}} a_{ij} \left\| \boldsymbol{\lambda}_{j}^{t} - \boldsymbol{\lambda}_{i}^{t} \right\|_{2}^{2} + \left\| \boldsymbol{\lambda}_{i}^{t} - \boldsymbol{\lambda} \right\|_{2}^{2} + \gamma_{t}^{2} \left\| \boldsymbol{g}_{i} \left(\boldsymbol{\theta}_{i}^{t}\right) - \gamma_{t} \boldsymbol{\lambda}_{i}^{t} \right\|_{2}^{2}$$
+.
 
-$$+ 2 \sum_{j \in \mathcal{N}_{i}} a_{ij} \left\langle \boldsymbol{\lambda}_{j}^{t} - \boldsymbol{\lambda}_{i}^{t}, \boldsymbol{\lambda}_{i}^{t} - \boldsymbol{\lambda} \right\rangle + 2 \gamma_{t} \left\langle \boldsymbol{\lambda}_{i}^{t} - \boldsymbol{\lambda}, \boldsymbol{g}_{i} \left(\boldsymbol{\theta}_{i}^{t}\right) - \gamma_{t} \boldsymbol{\lambda}_{i}^{t} \right\rangle$$
+22
 
-$$+ 2 \gamma_{t} \sum_{j \in \mathcal{N}_{i}} a_{ij} \left\| \boldsymbol{\lambda}_{j}^{t} - \boldsymbol{\lambda}_{i}^{t} \right\|_{2} \left\| \boldsymbol{g}_{i} \left(\boldsymbol{\theta}_{i}^{t}\right) - \gamma_{t} \boldsymbol{\lambda}_{i}^{t} \right\|_{2} \right), \tag{A30}$$
 
-where we use the fact  $1 - \gamma_t^2 \le 1$  in (A30). Next, we simplify the terms in (A30). First, based on the inequality  $(a-b)^2 \le 2(a^2+b^2)$  for any  $a,b \ge 0$ , we have that
+---Page Break---
+E.1
+Proof of Lemma E.1
 
-<span id="page-22-0"></span>
-$$\sum_{i=1}^{n} \sum_{j=1}^{n} a_{ij} \left\| \boldsymbol{\lambda}_{j}^{t} - \boldsymbol{\lambda}_{i}^{t} \right\|_{2}^{2} = \sum_{i=1}^{n} \sum_{j=1}^{n} a_{ij} \left( \left\| \left( \boldsymbol{\lambda}_{j}^{t} - \overline{\boldsymbol{\lambda}}^{t} \right) - \left( \boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t} \right) \right\|_{2}^{2} \right) \leq 4 \sum_{i=1}^{n} \left\| \boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t} \right\|_{2}^{2}.$$
+From the update rule of the dual variables, for any λt
+i ∈Rm
++, i ∈[n], and t ∈[T], we have that
 
+n
+X
+
+i=1
+
+λt+1
+i
+2
+
+2 ≤
+
+n
+X
+
+i=1
+
+
+
+n
+X
+
+j=1
+aij
+ 
+1 −γ2
+t
+
+λt
+j + γtgi(θt
+i)
+
+
+
+2
+
+2
+
+≤
+
+n
+X
+
+i=1
+
+n
+X
+
+j=1
+aij
+
+(1 −γ2
+t )λt
+j + γ2
+t
+gi(θt
+i)
+γt
+
+
+
+2
+
+2
+
+≤
+
+n
+X
+
+i=1
+
+n
+X
+
+j=1
+aij
+h
+(1 −γ2
+t )
+λt
+j
+2
+
+2 +
+gi(θt
+i)
+2
+2
+
+i
+
+≤(1 −γ2
+t )
+
+n
+X
+
+i=1
+
+λt
+i
+2
+2 +
+
+n
+X
+
+i=1
+
+gi(θt
+i)
+2
+2
+
+≤(1 −γ2
+t )
+
+n
+X
+
+i=1
+
+λt
+i
+2
+2 + nB2.
+
+We next bound Pn
+i=1
+λt
+i
+2
+2, ∀t ∈[T] by deduction. First, since λ1
+i = 0, γ1 ≤1, and ∥gi(θ1
+i )∥2
+2 ≤
+
+B2, ∀i ∈[n], we have that Pn
+i=1
+λ2
+i
+2
+
+2 ≤Pn
+i=1
+gi(θ1
+i )
+2
+
+2 ≤nB2 ≤
+nB2
+
+γ2
+1 . Assume that
+Pn
+i=1 ∥λt
+i∥2
+2 ≤nB2
+
+γ2
+t−1 . Since {γt}t∈[T ] is a non-incerasing sequence, Pn
+i=1 ∥λt
+i∥2
+2 ≤nB2
+
+γ2
+t−1 ≤nB2
+
+γ2
+t
+and thus Pn
+i=1
+λt+1
+i
+2
+
+2 ≤(1 −γ2
+t ) nB2
+
+γ2
+t
++ nB2 =
+nB2
+
+γ2
+t . Therefore, for any t ∈[T], we have
+Pn
+i=1 ∥λt+1
+i
+∥2
+2 ≤nB2
+
+γ2
+t
+≤nB2
+
+γ2
+t+1 , i.e., Pn
+i=1 ∥γtλt
+i∥2
+2 ≤nB2, which completes the proof.
+
+E.2
+Proof of Lemma E.2
+
+From the update rule of the dual variables λi, for any λ ∈Rm
++, we have that
+
+n
+X
+
+i=1
+
+λt+1
+i
+−λ
+2
+
+2 =
+
+n
+X
+
+i=1
+
+
+
+
+
+ 
+1 −γ2
+t
+ X
+
+j∈Ni
+aijλt
+j + γtgi
+ 
+θt
+i
+
+
+
+
+
++
+
+−λ
+
+
+
+2
+
+2
+
+≤
+
+n
+X
+
+i=1
+
+
+
+ 
+1 −γ2
+t
+ X
+
+j∈Ni
+aij
+ 
+λt
+j −λt
+i
+
++
+ 
+λt
+i −λ
+
++ γt
+ 
+gi
+ 
+θt
+i
+
+−γtλt
+i
+
+
+
+2
+
+2
+
+≤
+
+n
+X
+
+i=1
+
+
+
+X
+
+j∈Ni
+aij
+λt
+j −λt
+i
+2
+
+2 +
+λt
+i −λ
+2
+2 + γ2
+t
+gi
+ 
+θt
+i
+
+−γtλt
+i
+2
+2
+
++ 2
+X
+
+j∈Ni
+aij
+
+λt
+j −λt
+i, λt
+i −λ
+
++ 2γt
+
+λt
+i −λ, gi
+ 
+θt
+i
+
+−γtλt
+i
+
+
++2γt
+X
+
+j∈Ni
+aij
+λt
+j −λt
+i
+
+2
+gi
+ 
+θt
+i
+
+−γtλt
+i
+
+2
+
+
+
+,
+(A30)
+
+where we use the fact 1 −γ2
+t ≤1 in (A30). Next, we simplify the terms in (A30). First, based on the
+inequality (a −b)2 ≤2
+ 
+a2 + b2
+for any a, b ≥0, we have that
+
+n
+X
+
+i=1
+
+n
+X
+
+j=1
+aij
+λt
+j −λt
+i
+2
+
+2 =
+
+n
+X
+
+i=1
+
+n
+X
+
+j=1
+aij
+
+
+
+λt
+j −λ
+t
+−
+
+λt
+i −λ
+t
+2
+
+2
+
+
+≤4
+
+n
+X
+
+i=1
+
+λt
+i −λ
+t
+2
+
+2 .
+
+23
+
+
+---Page Break---
 In addition, with the result in Lemma E.1, we know that
 
-$$\sum_{i=1}^{n} \left\| \boldsymbol{g}_{i} \left( \boldsymbol{\theta}_{i}^{t} \right) - \gamma_{t} \boldsymbol{\lambda}_{i}^{t} \right\|_{2}^{2} \leq 2 \sum_{i=1}^{n} \left\| \boldsymbol{g}_{i} \left( \boldsymbol{\theta}_{i}^{t} \right) \right\|_{2}^{2} + 2 \sum_{i=1}^{n} \left\| \gamma_{t} \boldsymbol{\lambda}_{i}^{t} \right\|_{2}^{2} \leq 2nB^{2} + 2nB^{2} = 4nB^{2},$$
+n
+X
 
-$$\left\| \boldsymbol{g}_{i} \left( \boldsymbol{\theta}_{i}^{t} \right) - \gamma_{t} \boldsymbol{\lambda}_{i}^{t} \right\|_{2} \leq \left\| \boldsymbol{g}_{i} \left( \boldsymbol{\theta}_{i}^{t} \right) \right\|_{2} + \left\| \gamma_{t} \boldsymbol{\lambda}_{i}^{t} \right\|_{2} \leq B + \sqrt{n}B = (1 + \sqrt{n})B.$$
+i=1
 
-Moreover, based on the fact that  $\sum_{i=1}^n \sum_{j=1}^n a_{ij} \left\langle \boldsymbol{\lambda}_j^t - \boldsymbol{\lambda}_i^t, \boldsymbol{z} \right\rangle = 0$  for any  $\boldsymbol{z} \in \mathbb{R}^m$ , we have that
+gi
+ 
+θt
+i
+
+−γtλt
+i
+2
+2 ≤2
 
-$$\sum_{i=1}^{n} \sum_{j=1}^{n} a_{ij} \left\langle \boldsymbol{\lambda}_{j}^{t} - \boldsymbol{\lambda}_{i}^{t}, \boldsymbol{\lambda}_{i}^{t} - \boldsymbol{\lambda} \right\rangle = \sum_{i=1}^{n} \sum_{j=1}^{n} a_{ij} \left\langle \boldsymbol{\lambda}_{j}^{t} - \boldsymbol{\lambda}_{i}^{t}, \boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t} \right\rangle 
-\leq \frac{1}{2} \sum_{i=1}^{n} \sum_{j=1}^{n} a_{ij} \left( \left\| \boldsymbol{\lambda}_{j}^{t} - \boldsymbol{\lambda}_{i}^{t} \right\|_{2}^{2} + \left\| \boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t} \right\|_{2}^{2} \right) 
-\leq \frac{5}{2} \sum_{i=1}^{n} \left\| \boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t} \right\|_{2}^{2}.$$
+n
+X
+
+i=1
+
+gi
+ 
+θt
+i
+2
+2 + 2
+
+n
+X
+
+i=1
+
+γtλt
+i
+2
+2 ≤2nB2 + 2nB2 = 4nB2,
+
+gi
+ 
+θt
+i
+
+−γtλt
+i
+
+2 ≤
+gi
+ 
+θt
+i
+
+2 +
+γtλt
+i
+
+2 ≤B + √nB = (1 + √n)B.
+
+Moreover, based on the fact that Pn
+i=1
+Pn
+j=1 aij
+
+λt
+j −λt
+i, z
+
+= 0 for any z ∈Rm, we have that
+
+n
+X
+
+i=1
+
+n
+X
+
+j=1
+aij
+
+λt
+j −λt
+i, λt
+i −λ
+
+=
+
+n
+X
+
+i=1
+
+n
+X
+
+j=1
+aij
+D
+λt
+j −λt
+i, λt
+i −λ
+tE
+
+≤1
+
+2
+
+n
+X
+
+i=1
+
+n
+X
+
+j=1
+aij
+
+λt
+j −λt
+i
+2
+
+2 +
+λt
+i −λ
+t
+2
+
+2
+
+
+
+≤5
+
+2
+
+n
+X
+
+i=1
+
+λt
+i −λ
+t
+2
+
+2 .
 
 Furthermore, notice that
 
-$$\begin{split} \left\langle \boldsymbol{\lambda}_{i}^{t} - \boldsymbol{\lambda}, \boldsymbol{g}_{i}\left(\boldsymbol{\theta}_{i}^{t}\right) - \gamma_{t}\boldsymbol{\lambda}_{i}^{t} \right\rangle &= \left\langle \boldsymbol{\lambda}_{i}^{t} - \boldsymbol{\lambda}, \boldsymbol{g}_{i}\left(\boldsymbol{\theta}_{i}^{t}\right)\right\rangle - \gamma_{t}\|\boldsymbol{\lambda}_{i}^{t}\|_{2}^{2} + \gamma_{t}\boldsymbol{\lambda}^{\top}\boldsymbol{\lambda}_{i}^{t} \\ &\leq \left\langle \boldsymbol{\lambda}_{i}^{t} - \boldsymbol{\lambda}, \boldsymbol{g}_{i}\left(\boldsymbol{\theta}_{i}^{t}\right)\right\rangle + \frac{\gamma_{t}}{2}\left(\|\boldsymbol{\lambda}\|_{2}^{2} - \left\|\boldsymbol{\lambda}_{i}^{t}\right\|_{2}^{2}\right), \end{split}$$
+λt
+i −λ, gi
+ 
+θt
+i
+
+−γtλt
+i
+
+=
 
-where the last inequality follows that  $\boldsymbol{\lambda}^{\top} \boldsymbol{\lambda}_i^t = \frac{1}{2} (\|\boldsymbol{\lambda}\|_2^2 + \|\boldsymbol{\lambda}_i^t\|_2^2)$ . We also have
+λt
+i −λ, gi
+ 
+θt
+i
+
+−γt∥λt
+i∥2
+2 + γtλ⊤λt
+i
 
-$$\sum_{i=1}^{n} \sum_{j=1}^{n} a_{ij} \left\| \boldsymbol{\lambda}_{j}^{t} - \boldsymbol{\lambda}_{i}^{t} \right\|_{2} \leq 2 \sum_{i=1}^{n} \left\| \boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t} \right\|_{2}.$$
+≤
+
+λt
+i −λ, gi
+ 
+θt
+i
+
++ γt
+
+2
+
+
+∥λ∥2
+2 −
+λt
+i
+2
+2
+
+
+,
+
+where the last inequality follows that λ⊤λt
+i = 1
+
+2(∥λ∥2
+2 +
+λt
+i
+2
+2). We also have
+
+n
+X
+
+i=1
+
+n
+X
+
+j=1
+aij
+λt
+j −λt
+i
+
+2 ≤2
+
+n
+X
+
+i=1
+
+λt
+i −λ
+t
+2 .
 
 Plugging all the above results into (A30), we obtain
 
-$$\begin{split} \sum_{i=1}^{n} \left\| \boldsymbol{\lambda}_{i}^{t+1} - \boldsymbol{\lambda} \right\|_{2}^{2} &\leq \sum_{i=1}^{n} \left( \left\| \boldsymbol{\lambda}_{i}^{t} - \boldsymbol{\lambda} \right\|_{2}^{2} + 9 \left\| \boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t} \right\|_{2}^{2} \right. \\ &+ 2 \gamma_{t} \left\langle \boldsymbol{\lambda}_{i}^{t} - \boldsymbol{\lambda}, \boldsymbol{g}_{i} \left( \boldsymbol{\theta}_{i}^{t} \right) \right\rangle + \gamma_{t}^{2} \left( \left\| \boldsymbol{\lambda} \right\|_{2}^{2} - \left\| \boldsymbol{\lambda}_{i}^{t} \right\|_{2}^{2} \right) \\ &+ 4 \gamma_{t} (1 + \sqrt{n}) B \left\| \boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t} \right\|_{2} \right) + 4 n B^{2} \gamma_{t}^{2}. \end{split}$$
+n
+X
 
-Rearranging the terms in the above inequality and summing over  $t \in [T]$  gives
+i=1
 
-$$\begin{split} &\sum_{t=1}^{T} \sum_{i=1}^{n} \gamma_{t} \left\langle \boldsymbol{\lambda}_{i}^{t} - \boldsymbol{\lambda}, \boldsymbol{g}_{i} \left( \boldsymbol{\theta}_{i}^{t} \right) \right\rangle + \sum_{t=1}^{T} \frac{n \gamma_{t}^{2}}{2} \| \boldsymbol{\lambda} \|_{2}^{2} \\ &\geq \frac{1}{2} \sum_{t=1}^{T} \sum_{i=1}^{n} \left( \left\| \boldsymbol{\lambda}_{i}^{t+1} - \boldsymbol{\lambda} \right\|_{2}^{2} - \left\| \boldsymbol{\lambda}_{i}^{t} - \boldsymbol{\lambda} \right\|_{2}^{2} \right) \\ &- \frac{9}{2} \sum_{t=1}^{T} \sum_{i=1}^{n} \left\| \boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t} \right\|_{2}^{2} - 4nB^{2} \sum_{t=1}^{T} \gamma_{t}^{2} \\ &- 2(1 + \sqrt{n})B \sum_{t=1}^{T} \gamma_{t} \sum_{i=1}^{n} \left\| \boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t} \right\|_{2} + \sum_{t=1}^{T} \sum_{i=1}^{n} \frac{\gamma_{t}^{2}}{2} \left\| \boldsymbol{\lambda}_{i}^{t} \right\|_{2}^{2}. \end{split}$$
+λt+1
+i
+−λ
+2
 
-The last term on the right side of the above inequality is non-negative and can be omitted. Besides, since  $\lambda_i^1 = \mathbf{0}$  for all  $i \in [n]$ , then  $\sum_{t=1}^T \left( \left\| \boldsymbol{\lambda}_i^{t+1} - \boldsymbol{\lambda} \right\|_2^2 - \left\| \boldsymbol{\lambda}_i^t - \boldsymbol{\lambda} \right\|_2^2 \right) \ge - \|\boldsymbol{\lambda}\|_2^2$  for any  $\boldsymbol{\lambda}_i^{T+1} \in \mathbb{R}$ 
+2 ≤
 
- $\mathbb{R}^m_+$ . Thus, we have
+n
+X
 
-$$\begin{split} &\sum_{t=1}^T \sum_{i=1}^n \gamma_t \left( (\boldsymbol{\lambda}_i^t)^\top \boldsymbol{g}_i(\boldsymbol{\theta}_i^t) - \boldsymbol{\lambda}^\top \boldsymbol{g}_i(\boldsymbol{\theta}_i^t) \right) \\ &\geq -\frac{n}{2} \left( 1 + \sum_{t=1}^T \gamma_t^2 \right) \|\boldsymbol{\lambda}\|_2^2 - \frac{9}{2} \sum_{t=1}^T \sum_{i=1}^n \left\| \boldsymbol{\lambda}_i^t - \overline{\boldsymbol{\lambda}}^t \right\|_2^2 \\ &- 2(1 + \sqrt{n}) B \sum_{t=1}^T \gamma_t \sum_{i=1}^n \left\| \boldsymbol{\lambda}_i^t - \overline{\boldsymbol{\lambda}}^t \right\|_2 - 4n B^2 \sum_{t=1}^T \gamma_t^2. \end{split}$$
+i=1
+
+λt
+i −λ
+2
+2 + 9
+λt
+i −λ
+t
+2
+
+2
+
++ 2γt
+
+λt
+i −λ, gi
+ 
+θt
+i
+
++ γ2
+t
+
+∥λ∥2
+2 −
+λt
+i
+2
+2
+
+
+
++4γt(1 + √n)B
+λt
+i −λ
+t
+2
+
+
++ 4nB2γ2
+t .
+
+Rearranging the terms in the above inequality and summing over t ∈[T] gives
+
+T
+X
+
+t=1
+
+n
+X
+
+i=1
+γt
+
+λt
+i −λ, gi
+ 
+θt
+i
+
++
+
+T
+X
+
+t=1
+
+nγ2
+t
+2 ∥λ∥2
+2
+
+≥1
+
+2
+
+T
+X
+
+t=1
+
+n
+X
+
+i=1
+
+λt+1
+i
+−λ
+2
+
+2 −
+λt
+i −λ
+2
+2
+
+
+
+−9
+
+2
+
+T
+X
+
+t=1
+
+n
+X
+
+i=1
+
+λt
+i −λ
+t
+2
+
+2 −4nB2
+T
+X
+
+t=1
+γ2
+t
+
+−2(1 + √n)B
+
+T
+X
+
+t=1
+γt
+
+n
+X
+
+i=1
+
+λt
+i −λ
+t
+2 +
+
+T
+X
+
+t=1
+
+n
+X
+
+i=1
+
+γ2
+t
+2
+
+λt
+i
+2
+2 .
+
+The last term on the right side of the above inequality is non-negative and can be omitted. Besides,
+since λ1
+i = 0 for all i ∈[n], then PT
+t=1
+λt+1
+i
+−λ
+2
+
+2 −
+λt
+i −λ
+2
+2
+
+
+≥−∥λ∥2
+2 for any λT +1
+i
+∈
+
+24
+
+
+---Page Break---
+Rm
++. Thus, we have
+
+T
+X
+
+t=1
+
+n
+X
+
+i=1
+γt
+
+(λt
+i)⊤gi(θt
+i) −λ⊤gi(θt
+i)
+
+
+≥−n
+
+2
+
+ 
+
+1 +
+
+T
+X
+
+t=1
+γ2
+t
+
+!
+
+∥λ∥2
+2 −9
+
+2
+
+T
+X
+
+t=1
+
+n
+X
+
+i=1
+
+λt
+i −λ
+t
+2
+
+2
+
+−2(1 + √n)B
+
+T
+X
+
+t=1
+γt
+
+n
+X
+
+i=1
+
+λt
+i −λ
+t
+2 −4nB2
+T
+X
+
+t=1
+γ2
+t .
 
 Rearranging the terms in the above inequality yields
 
-$$\begin{split} -\sum_{t=1}^T \sum_{i=1}^n \gamma_t (\boldsymbol{\lambda}_i^t)^\top \boldsymbol{g}_i(\boldsymbol{\theta}_i^t) \leq -\sum_{t=1}^T \sum_{i=1}^n \gamma_t \boldsymbol{\lambda}^\top \boldsymbol{g}_i(\boldsymbol{\theta}_i^t) + \frac{n}{2} \left( 1 + \sum_{t=1}^T \gamma_t^2 \right) \|\boldsymbol{\lambda}\|_2^2 + \frac{9}{2} \sum_{t=1}^T \sum_{i=1}^n \left\| \boldsymbol{\lambda}_i^t - \overline{\boldsymbol{\lambda}}^t \right\|_2^2 \\ + 2(1 + \sqrt{n}) B \sum_{t=1}^T \gamma_t \sum_{i=1}^n \left\| \boldsymbol{\lambda}_i^t - \overline{\boldsymbol{\lambda}}^t \right\|_2 + 4n B^2 \sum_{t=1}^T \gamma_t^2, \end{split}$$
+−
+
+T
+X
+
+t=1
+
+n
+X
+
+i=1
+γt(λt
+i)⊤gi(θt
+i) ≤−
+
+T
+X
+
+t=1
+
+n
+X
+
+i=1
+γtλ⊤gi(θt
+i) + n
+
+2
+
+ 
+
+1 +
+
+T
+X
+
+t=1
+γ2
+t
+
+!
+
+∥λ∥2
+2 + 9
+
+2
+
+T
+X
+
+t=1
+
+n
+X
+
+i=1
+
+λt
+i −λ
+t
+2
+
+2
+
++ 2(1 + √n)B
+
+T
+X
+
+t=1
+γt
+
+n
+X
+
+i=1
+
+λt
+i −λ
+t
+2 + 4nB2
+T
+X
+
+t=1
+γ2
+t ,
 
 which completes the proof.
 
-#### <span id="page-24-1"></span>E.3 Proof of Lemma E.4
+E.3
+Proof of Lemma E.4
 
-Based on the update rule of  $\widehat{\boldsymbol{\theta}}_{ih}^t$  that  $\widehat{\boldsymbol{\theta}}_{ih}^{t+1} = \sum_{k \neq h} a_{ik} \widehat{\boldsymbol{\theta}}_{kh}^t + a_{ih} \boldsymbol{\theta}_h^t, \forall h \neq i \text{ and } i, h \in [n]$ , we have that
+Based on the update rule of bθ
+t
+ih that bθ
+t+1
+ih
+= P
 
-$$\begin{aligned} \boldsymbol{e}_{ih}^{t+1} &:= \widehat{\boldsymbol{\theta}}_{ih}^{t+1} - \boldsymbol{\theta}_h^{t+1} = \sum_{k \neq h} a_{ik} \widehat{\boldsymbol{\theta}}_{kh}^t + a_{ih} \boldsymbol{\theta}_h^t - \boldsymbol{\theta}_h^{t+1} + \boldsymbol{\theta}_h^t - \boldsymbol{\theta}_h^t \\ &= \sum_{k \neq h} a_{ik} \boldsymbol{e}_{kh}^t - \left(\boldsymbol{\theta}_h^{t+1} - \boldsymbol{\theta}_h^t\right). \end{aligned}$$
+k̸=h aikbθ
+t
+kh + aihθt
+h, ∀h ̸= i and i, h ∈[n], we have
+that
 
-Recall that  $\mathbf{A}_h^-$  is the weight matrix formed by removing the hth row and hth column of the weight matrix  $\mathbf{A}$  for any  $h \in [n]$ , and  $\mathbf{e}_h^t := \operatorname{col}\left(\mathbf{e}_{1h}^t, \cdots, \mathbf{e}_{(h-1)h}^t, \mathbf{e}_{(h+1)h}^t, \cdots, \mathbf{e}_{nh}^t\right)$ . Then,
+et+1
+ih
+:= bθ
+t+1
+ih
+−θt+1
+h
+=
+X
 
-<span id="page-24-0"></span>
-$$\boldsymbol{e}_h^{t+1} = (\mathbf{A}_h^- \otimes \mathbf{I}_d) \boldsymbol{e}_h^t + \mathbf{1}_{n-1} \otimes \left(\boldsymbol{\theta}_h^{t+1} - \boldsymbol{\theta}_h^t\right).$$
+k̸=h
+aikbθ
+t
+kh + aihθt
+h −θt+1
+h
++ θt
+h −θt
+h
 
-Since  $\beta$  is the maximium eigenvalue of  $\mathbf{A}_h^-$  for all  $h \in [n]$ , we have that
+=
+X
 
-$$\mathbb{E}\|\boldsymbol{e}_{h}^{t+1}\|_{2} \leq \mathbb{E}\left\|\left(\boldsymbol{A}_{h}^{-} \otimes \mathbf{I}_{d}\right)\boldsymbol{e}_{h}^{t}\right\|_{2} + \mathbb{E}\left\|\boldsymbol{1}_{n-1} \otimes \left(\boldsymbol{\theta}_{h}^{t+1} - \boldsymbol{\theta}_{h}^{t}\right)\right\|_{2} \\
-\leq \beta \mathbb{E}\|\boldsymbol{e}_{h}^{t}\|_{2} + \sqrt{n-1}\gamma_{t}\mathbb{E}\left\|\boldsymbol{\phi}_{h}^{t}\left(\boldsymbol{\xi}_{h}^{t};\boldsymbol{\theta}_{h}^{t},\boldsymbol{\lambda}_{h}^{t}\right)\right\|_{2} \\
-\leq \beta \mathbb{E}\|\boldsymbol{e}_{h}^{t}\|_{2} + \sqrt{n-1}\gamma_{t}\mathbb{E}\left\|\nabla_{\boldsymbol{\theta}_{h}}J_{h}\left(\boldsymbol{\xi}_{h}^{t};\boldsymbol{\theta}_{h}^{t},\boldsymbol{\hat{\theta}}_{h}^{t}\right)\right\|_{2} + \sqrt{n-1}\gamma_{t}^{2}\mathbb{E}\left\|\nabla\boldsymbol{g}_{h}(\boldsymbol{\theta}_{h})^{\top}\boldsymbol{\lambda}_{h}^{t}\right\|_{2} \\
-\leq \beta \mathbb{E}\|\boldsymbol{e}_{h}^{t}\|_{2} + \sqrt{n-1}\gamma_{t}(G + G_{g}\mathbb{E}\|\gamma_{t}\boldsymbol{\lambda}_{h}^{t}\|_{2}) \\
-\leq \beta^{t}\mathbb{E}\|\boldsymbol{e}_{h}^{1}\|_{2} + \sqrt{n-1}\sum_{k=0}^{t-1}\beta^{k}\gamma_{t-k}(G + \sqrt{n}BG_{g}). \tag{A31}$$
+k̸=h
+aiket
+kh −
+ 
+θt+1
+h
+−θt
+h
+
+.
 
-Further, since  $\boldsymbol{\theta}_{ih}^1 = \mathbf{0}$  for any  $i,h \in [n]$ , then, from Assumption 2.3,  $\mathbb{E}\|\boldsymbol{e}_{ih}^1\|_2 = \|\boldsymbol{\theta}_h^1\|_2 \leq C$ . Summing the above inequality over  $t \in [T]$  and  $h \in [n]$ , we obtain
+Recall that A−
+h is the weight matrix formed by removing the hth row and hth column of the weight
 
-$$\sum_{t=1}^{T} \sum_{h=1}^{n} \mathbb{E} \| \boldsymbol{e}_{h}^{t} \|_{2} \leq nC \sum_{t=1}^{T} \beta^{t-1} + n\sqrt{n-1}(G + \sqrt{n}BG_{g}) \sum_{t=1}^{T} \sum_{k=0}^{t-2} \beta^{k} \gamma_{t-k-1}$$
+matrix A for any h ∈[n], and et
+h := col
+
+et
+1h, · · · , et
+(h−1)h, et
+(h+1)h, · · · , et
+nh
+
+. Then,
 
-$$\leq \frac{nC}{1-\beta} + n\sqrt{n-1}(G + \sqrt{n}BG_{g}) \sum_{k=1}^{T} \sum_{t=k+1}^{T} \beta^{t-k-1} \gamma_{k}$$
+et+1
+h
+= (A−
+h ⊗Id)et
+h + 1n−1 ⊗
+ 
+θt+1
+h
+−θt
+h
+
+.
 
-$$\leq \frac{nC}{1-\beta} + \frac{n\sqrt{n-1}(G + \sqrt{n}BG_{g})}{1-\beta} \sum_{k=1}^{T} \gamma_{k}.$$
+Since β is the maximium eigenvalue of A−
+h for all h ∈[n], we have that
 
+E∥et+1
+h
+∥2 ≤E
+(A−
+h ⊗Id)et
+h
+
+2 + E
+1n−1 ⊗
+ 
+θt+1
+h
+−θt
+h
+
+2
+
+≤βE∥et
+h∥2 +
+√
+
+n −1γtE
+φt
+h
+
+ξt
+h; θt
+h, bθ
+t
+h, λt
+h
+
+2
+
+≤βE∥et
+h∥2 +
+√
+
+n −1γtE
+∇θhJh
+
+ξt
+h; θt
+h, bθ
+t
+h
+
+2 +
+√
+
+n −1γ2
+t E
+∇gh(θh)⊤λt
+h
+
+2
+
+≤βE∥et
+h∥2 +
+√
+
+n −1γt(G + GgE∥γtλt
+h∥2)
+
+≤βtE∥e1
+h∥2 +
+√
+
+n −1
+
+t−1
+X
+
+k=0
+βkγt−k(G + √nBGg).
+(A31)
+
+Further, since θ1
+ih = 0 for any i, h ∈[n], then, from Assumption 2.3, E∥e1
+ih∥2 = ∥θ1
+h∥2 ≤C.
+Summing the above inequality over t ∈[T] and h ∈[n], we obtain
+
+T
+X
+
+t=1
+
+n
+X
+
+h=1
+E∥et
+h∥2 ≤nC
+
+T
+X
+
+t=1
+βt−1 + n
+√
+
+n −1(G + √nBGg)
+
+T
+X
+
+t=1
+
+t−2
+X
+
+k=0
+βkγt−k−1
+
+≤
+nC
+1 −β + n
+√
+
+n −1(G + √nBGg)
+
+T
+X
+
+k=1
+
+T
+X
+
+t=k+1
+βt−k−1γk
+
+≤
+nC
+1 −β + n√n −1(G + √nBGg)
+
+1 −β
+
+T
+X
+
+k=1
+γk.
+
+25
+
+
+---Page Break---
 On the other hand, taking square on both sides of (A31), we have
 
-<span id="page-25-1"></span>
-$$\mathbb{E}\|\boldsymbol{e}_{h}^{t}\|_{2}^{2} \leq 2\beta^{t} \mathbb{E}\left\|\boldsymbol{e}_{h}^{1}\right\|_{2}^{2} + 2(n-1)(G + \sqrt{n}BG_{g})^{2} \left(\sum_{k=0}^{t-2} \beta^{k} \gamma_{t-k-1}\right)^{2}.$$
- (A32)
+E∥et
+h∥2
+2 ≤2βtE
+e1
+h
+2
+2 + 2(n −1)(G + √nBGg)2
+ t−2
+X
+
+k=0
+βkγt−k−1
+
+!2
+
+.
+(A32)
 
 Using the Cauchy-Schwarz inequality yields
 
-<span id="page-25-0"></span>
-$$\left(\sum_{k=0}^{t-2} \beta^k \gamma_{t-k-1}\right)^2 \le \left(\sum_{k=0}^{t-2} \beta^k\right) \left(\sum_{k=0}^{t-2} \beta^k \gamma_{t-k-1}^2\right) \le \frac{\sum_{k=0}^{t-2} \beta^k \gamma_{t-k-1}}{1-\beta}.$$
- (A33)
+ t−2
+X
 
-Plugging (A33) into (A32) and summing over  $t \in [T]$ , we have that
+k=0
+βkγt−k−1
 
-$$\sum_{t=1}^{T} \sum_{h=1}^{n} \mathbb{E} \|\boldsymbol{e}_{h}^{t}\|_{2}^{2} \leq 2nC^{2} \sum_{t=1}^{T} \beta^{t} + \frac{2n(n-1)(G+\sqrt{n}BG_{g})^{2}}{1-\beta} \left(\sum_{t=1}^{T} \sum_{k=0}^{t-2} \beta^{k} \gamma_{t-k-1}\right)$$
+!2
 
-$$\leq \frac{2nC^{2}}{1-\beta} + \frac{2n(n-1)(G+\sqrt{n}BG_{g})^{2}}{(1-\beta)^{2}} \sum_{t=1}^{T} \gamma_{k}.$$
+≤
 
-#### E.4 Proof of Lemma E.5
+ t−2
+X
 
-Let  $\boldsymbol{\omega}_i^t := \left[ \left( 1 - \gamma_t^2 \right) \sum_{j \in \mathcal{N}_i} a_{ij} \boldsymbol{\lambda}_j^t + \gamma_t \boldsymbol{g}_i \left( \boldsymbol{\theta}_i^t \right) \right]_+ - \sum_{j \in \mathcal{N}_i} a_{ij} \boldsymbol{\lambda}_j^t$ . Then, for any  $i \in [n]$ , we have that
+k=0
+βk
+!  t−2
+X
 
-$$\|\boldsymbol{\omega}_{i}^{t}\|_{2} = \left\| \left[ (1 - \gamma_{t}^{2}) \sum_{j \in \mathcal{N}_{i}} a_{ij} \boldsymbol{\lambda}_{j}^{t} + \gamma_{t} \boldsymbol{g}_{i} \left(\boldsymbol{\theta}_{i}^{t}\right) \right]_{+} - \sum_{j \in \mathcal{N}_{i}} a_{ij} \boldsymbol{\lambda}_{j}^{t} \right\|_{2}$$
+k=0
+βkγ2
+t−k−1
 
-$$\leq \left\| -\gamma_{t} \sum_{j \in \mathcal{N}_{i}} a_{ij} \gamma_{t} \boldsymbol{\lambda}_{j}^{t} + \gamma_{t} \boldsymbol{g}_{i} \left(\boldsymbol{\theta}_{i}^{t}\right) \right\|_{2}$$
+!
 
-$$\leq \gamma_{t} \sum_{j \in \mathcal{N}_{i}} a_{ij} \left\| \gamma_{t} \boldsymbol{\lambda}_{j}^{t} \right\|_{2} + \gamma_{t} \left\| \boldsymbol{g}_{i} \left(\boldsymbol{\theta}_{i}^{t}\right) \right\|_{2}$$
+≤
+Pt−2
+k=0 βkγt−k−1
 
-$$\leq \gamma_{t} (\sqrt{n} + 1) B. \tag{A34}$$
+1 −β
+.
+(A33)
 
-The first inequality in (A34) results from the nonexpansive property of projection, and the third inequality holds by using Lemma E.1. By the update rule of  $\lambda_i$  for any  $i \in [n]$ , we have that
+Plugging (A33) into (A32) and summing over t ∈[T], we have that
 
-<span id="page-25-2"></span>
-$$\boldsymbol{\lambda}_i^{t+1} = \sum_{j \in \mathcal{N}_i} a_{ij} \boldsymbol{\lambda}_j^t + \boldsymbol{\omega}_i^t.$$
+T
+X
 
-Define concatenation vectors  $\boldsymbol{\lambda}_o^t = \operatorname{col}\left(\boldsymbol{\lambda}_1^t, \cdots, \boldsymbol{\lambda}_n^t\right)$  and  $\boldsymbol{\omega}_o^t = \operatorname{col}\left(\boldsymbol{\omega}_1^t, \cdots, \boldsymbol{\omega}_n^t\right)$ . Then, for any  $t \in [T]$ , we have
+t=1
 
-<span id="page-25-4"></span><span id="page-25-3"></span>
-$$\boldsymbol{\lambda}_o^{t+1} = (\mathbf{A} \otimes \mathbf{I}_m) \, \boldsymbol{\lambda}_o^t + \boldsymbol{\omega}_o^t. \tag{A35}$$
+n
+X
 
-Since  $\overline{\lambda}^t = \frac{1}{n} \sum_{i=1}^n \lambda_i^t$ , we have that
+h=1
+E∥et
+h∥2
+2 ≤2nC2
+T
+X
 
-$$\boldsymbol{\Delta}^{t} := \boldsymbol{\lambda}_{o}^{t} - (\mathbf{1}_{n} \otimes \mathbf{I}_{m}) \, \overline{\boldsymbol{\lambda}}^{t} = \left( \left( \mathbf{I}_{n} - \frac{\mathbf{1}_{n} \mathbf{1}_{n}^{T}}{n} \right) \otimes \mathbf{I}_{m} \right) \boldsymbol{\lambda}_{o}^{t}, \forall t \in [T]. \tag{A36}$$
+t=1
+βt + 2n(n −1)(G + √nBGg)2
+
+1 −β
+
+ T
+X
+
+t=1
+
+t−2
+X
+
+k=0
+βkγt−k−1
+
+!
+
+≤2nC2
+
+1 −β + 2n(n −1)(G + √nBGg)2
+
+(1 −β)2
+
+T
+X
+
+k=1
+γk.
+
+E.4
+Proof of Lemma E.5
+
+Let ωt
+i :=
+h 
+1 −γ2
+t
+ P
+
+j∈Ni aijλt
+j + γtgi
+ 
+θt
+i
+i
+
++ −P
+
+j∈Ni aijλt
+j. Then, for any i ∈[n], we have
+
+that
+
+ωt
+i
+
+2 =
+
+
+
+
+
+ 
+1 −γ2
+t
+ X
+
+j∈Ni
+aijλt
+j + γtgi
+ 
+θt
+i
+
+
+
+
+
++
+
+−
+X
+
+j∈Ni
+aijλt
+j
+
+
+2
+
+≤
+
+
+−γt
+X
+
+j∈Ni
+aijγtλt
+j + γtgi
+ 
+θt
+i
+
+
+2
+≤γt
+X
+
+j∈Ni
+aij
+γtλt
+j
+
+2 + γt
+gi
+ 
+θt
+i
+
+2
+
+≤γt(√n + 1)B.
+(A34)
+
+The ﬁrst inequality in (A34) results from the nonexpansive property of projection, and the third
+inequality holds by using Lemma E.1. By the update rule of λi for any i ∈[n], we have that
+
+λt+1
+i
+=
+X
+
+j∈Ni
+aijλt
+j + ωt
+i.
+
+Deﬁne concatenation vectors λt
+o = col
+ 
+λt
+1, · · · , λt
+n
+
+and ωt
+o = col (ωt
+1, · · · , ωt
+n). Then, for any
+t ∈[T], we have
+
+λt+1
+o
+= (A ⊗Im) λt
+o + ωt
+o.
+(A35)
+
+Since λ
+t = 1
+
+n
+Pn
+i=1 λt
+i, we have that
+
+∆t := λt
+o −(1n ⊗Im) λ
+t =
+
+In −1n1T
+n
+n
+
+
+⊗Im
+
+
+λt
+o, ∀t ∈[T].
+(A36)
 
 Combining (A35) and (A36) yields
 
-$$\boldsymbol{\Delta}^{t+1} = (\mathbf{A} \otimes \mathbf{I}_m) \, \boldsymbol{\Delta}^t + \left( \left( \mathbf{I} - \frac{\mathbf{1}\mathbf{1}^T}{n} \right) \otimes \mathbf{I}_m \right) \boldsymbol{\omega}_o^t, \forall t \in [T].$$
+∆t+1 = (A ⊗Im) ∆t +
+
+I −11T
 
-Figure 3: A networked Cournot game with five firms and three markets.
+n
 
-<span id="page-26-2"></span>Since  $\lambda_i^1 = \mathbf{0}$  for all  $i \in [n]$ , then  $\Delta^1 = \mathbf{0}$ . Based on the fact that  $\left\|\mathbf{I} - \frac{\mathbf{1}\mathbf{1}^T}{n}\right\|_{\mathrm{F}} \leq 2$ , we have that
+
+⊗Im
 
-$$\sum_{i=1}^{n} \left\| \boldsymbol{\lambda}_{i}^{t+1} - \overline{\boldsymbol{\lambda}}^{t+1} \right\|_{2} = \left\| (\mathbf{A} \otimes \mathbf{I}_{m}) \, \boldsymbol{\Delta}^{t} + \left( \left( \mathbf{I} - \frac{\mathbf{1} \mathbf{1}^{T}}{n} \right) \otimes \mathbf{I}_{m} \right) \boldsymbol{\omega}_{o}^{t} \right\|_{2} \\
-\leq \left\| (\mathbf{A} \otimes \mathbf{I}_{m}) \, \boldsymbol{\Delta}^{t} \right\|_{2} + \left\| \left( \left( \mathbf{I} - \frac{\mathbf{1} \mathbf{1}^{T}}{n} \right) \otimes \mathbf{I}_{m} \right) \boldsymbol{\omega}_{o}^{t} \right\|_{2} \\
-\leq \sigma_{2}(\mathbf{A}) \left\| \boldsymbol{\Delta}^{t} \right\|_{2} + 2 \left\| \boldsymbol{\omega}_{o}^{t} \right\|_{2} \\
-\leq 2 \sum_{k=0}^{t-1} \sigma_{2}(\mathbf{A})^{k} \left\| \boldsymbol{\omega}_{o}^{t-k} \right\|_{2} \\
-\leq 2(n + \sqrt{n}) B \sum_{k=0}^{t-1} \sigma_{2}(\mathbf{A})^{k} \gamma_{t-k},$$
+
+ωt
+o, ∀t ∈[T].
 
-where the last inequality is based on the result in (A34). Summing the above inequality over  $t \in [T]$  yields
+26
 
-$$\sum_{t=1}^{T} \sum_{i=1}^{n} \left\| \boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t} \right\|_{2} \leq 2(n + \sqrt{n}) B \sum_{t=1}^{T} \sum_{k=0}^{t-2} \sigma_{2}(\mathbf{A})^{k} \gamma_{t-1-k}$$
 
-$$\leq \frac{2(n + \sqrt{n})B}{1 - \sigma_{2}(\mathbf{A})} \sum_{k=1}^{T} \gamma_{k}.$$
+---Page Break---
+Firm 5
+Firm 2
 
-Similarly to the calculation of  $\sum_{t=1}^T \sum_{h=1}^n \|e_h^t\|_2^2$  in Section E.3, we have that
+Firm 3
 
-$$\sum_{t=1}^{T} \sum_{i=1}^{n} \left\| \boldsymbol{\lambda}_{i}^{t} - \overline{\boldsymbol{\lambda}}^{t} \right\|_{2}^{2} \leq \frac{4(n+\sqrt{n})^{2} B^{2}}{(1-\sigma_{2}(\mathbf{A}))^{2}} \sum_{k=1}^{T} \gamma_{k}.$$
+Firm 1
+Firm 4
 
-#### <span id="page-26-1"></span>**F** Simulation Details
+Figure 3: A networked Cournot game with ﬁve ﬁrms and three markets.
 
-#### <span id="page-26-0"></span>F.1 Networked Cournot Game
+Since λ1
+i = 0 for all i ∈[n], then ∆1 = 0. Based on the fact that
+I −11T
 
-The Cournot game is a foundational model in economic theory (Allaz and Vila, 1993) for analyzing oligopolistic competition, where a limited number of firms dominate a specific market. In Cournot games, all firms sell a homogeneous commodity and aim to maximize their individual profits by independently and simultaneously determining optimal production quantities. The total quantity produced by all firms is constrained by factors such as market capacity, raw material availability, and environmental considerations. The profit of each firm depends not only on its own production quantity but also on the quantities chosen by its competitors, as they influence the demand price determined
+n
+
+F ≤2, we have that
 
-<span id="page-27-0"></span><span id="page-27-1"></span>Figure 5: The serving quantities of five firms to three markets.
+n
+X
 
-by the market's demand curve and the total production quantity. There are strategic interactions between firms and markets in the Cournot game. According to the law of supply and demand, an increased production quantity drives down the demand price, and vice versa. The Cournot game model has diverse applications in various fields, including supply chain management, electricity market competition, natural resource extraction, online advertising auctions, and the telecommunications industry.
+i=1
 
-In this experiment, we consider a networked Cournot game comprising n firms selling a single commodity across m markets, as illustrated in Fig. 3. Each firm  $i \in [n]$  determines its output quantity  $\theta_i = \operatorname{col}\left(\theta_{i1}, \cdots, \theta_{im}\right)$  subject to the constraint of its production capacity  $Q_i$  that  $\sum_{j=1}^m \theta_{ij} \leq Q_i$ . Here,  $\theta_{ij}$  denotes the quantity of player i sold to the jth market. The total quantity allocated to market j is limited by its market capacity  $B_j$ , satisfying the condition that  $\sum_{i=1}^n \theta_{ij} \leq B_j \ \forall j \in [m]$ . Thus, the local constraint of player i associated with market j is
+λt+1
+i
+−λ
+t+1
+2 =
+∆t+1
+2 =
+(A ⊗Im) ∆t +
+
+I −11T
 
-$$g_{ij}(\boldsymbol{\theta}_i) = \theta_{ij} - B_j/n, \forall i \in [n], j \in [m].$$
- Let  $\boldsymbol{g}_i(\boldsymbol{\theta}_i) := \operatorname{col}\left(g_{i1}(\boldsymbol{\theta}_i), \cdots, g_{im}(\boldsymbol{\theta}_i)\right), \forall i \in [n].$ 
+n
 
-The cost function of firm i is defined as
+
+⊗Im
 
-<span id="page-28-1"></span>
-$$J_i = \boldsymbol{d}_i^{\top} \boldsymbol{\theta}_i - \sum_{j=1}^m p_j \theta_{ij},$$
+
+ωt
+o
 
-where  $d_i = \operatorname{col}(d_{i1}, \dots, d_{im})$  and  $d_{ij}$  represents the cost that firm i sells a unit of its product to the jth market,  $\forall i \in [n], j \in [m]$ .  $d_i$  includes the cost of raw material, transportation, maintenance, etc. In  $J_i$ , the term  $p_j$  denotes the unit demand price of market j determined by its market demand curve and the total production quantity, given by
+
+2
 
-$$p_j = \xi_j + \Lambda_j \left( c_j + \frac{1}{d_j} \sum_{i=1}^n \theta_{ij} \right)^{-\frac{1}{\tau_j}}, \forall j \in [m], \tag{A37}$$
+≤
+(A ⊗Im) ∆t
+2 +
+
 
-where  $c_j$ ,  $d_j$   $\Lambda_j$ , and  $\tau_j > 0$  are constants,  $\xi_j$  is a random variable. Due to the interaction between firms and markets, the demand price can fluctuate with production quantities, represented by  $\xi_j \sim \mathcal{D}_j(\boldsymbol{\theta})$ . Note that the quantity-dependent distributions  $\mathcal{D}_j(\boldsymbol{\theta})$  for all  $j \in [m]$  are unknown by players. For any  $j \in [m]$ , the variable  $\xi_j$  is defined as
+
+I −11T
 
-$$\xi_j = \xi_j^o + \varepsilon \frac{\alpha_j}{\sum_{j'=1}^m \alpha_{j'}} \left( \sum_{i=1}^n \theta_{ij} \right),\,$$
+n
 
-where  $\xi^o_j$  is the random base component,  $\varepsilon \geq 0$  represents the performative strength of markets, and  $\alpha_j$  is the relative strength of market j for any  $j \in [m]$ . According to the law of supply and demand, an increased production quantity generally decreases a market's demand price, which corresponds to the setup that  $\alpha_j \leq 0$  for all  $j \in [m]$ . Thus, the objective of each play  $i \in [n]$  in the network Cournot game is formulated by
+
+⊗Im
 
-$$\begin{aligned} & \min_{\boldsymbol{\theta}_i \in \boldsymbol{\Omega}_i} \quad \mathbb{E}_{p_j \sim \mathcal{D}_j(\boldsymbol{\theta}_{ij}, \forall i \in [n]), j \in [m]} \left[ \boldsymbol{d}_i^\top \boldsymbol{\theta}_i - \sum_{j=1}^m p_j \boldsymbol{\theta}_{ij} \right] \\ & \text{subject to} \quad \boldsymbol{\theta}_{ij} + \sum_{i' \neq i} \boldsymbol{\theta}_{i'j} \leq B_j, \forall j \in [m]. \end{aligned}$$
+
+ωt
+o
 
-In the simulation, we set n=5 and m=3. The network structure is as depicted in Fig. 3. Each element of the communication weight matrix  $A=(a_{ij})_{n\times n}$  is set to be  $a_{ij}=\frac{1}{|\mathcal{N}_i|}$ , and  $|\mathcal{N}_i|$  is the cardinality of  $\mathcal{N}_i$ . The production capacity  $Q_i$  is randomly and uniformly drawn from [10,12] for all  $i\in[5]$ , and the market's capacity  $B_j$  is randomly and uniformly drawn from [10,15] for all  $j\in[m]$ . All entries in  $d_i$ ,  $\forall i\in[n]$  are randomly and uniformly drawn from [1,1.5]. The distribution of  $\xi_j^o$  is set to  $\min(\max(\mathcal{N}(2.5,1),2.5),7.5)$ . The performative power  $\alpha_j$  is randomly and uniformly drawn from (-1,0], for all  $j\in[3]$ . Other settings are:  $\Lambda_j=10$ ,  $c_j=10$ ,  $d_j=5$  and  $\tau_j=2$ ,  $\forall j\in[3]$ .
+
+2
+≤σ2(A)
+∆t
+2 + 2
+ωt
+o
+
+2
 
-Fig. 4 compares the demand prices of three markets at PSE and NE with performative strength  $\varepsilon=0.2,\,0.4,\,$  and 0.6 and Fig. 5 compares the corresponding serving quantities of five firms to these three markets. The results suggest that, although a larger performative strength leads to a wider gap, the difference in these two indicators between the PSE and NE remains insignificant. This confirms the effectiveness of PSE solutions and our distance analysis between the PSE and NE as stated in Theorem 3.5.
+≤2
 
-#### <span id="page-28-0"></span>F.2 Ride-Share Market
+t−1
+X
 
-We further examine an example of a ride-share market, where multiple platforms compete to maximize their individual revenue by offering shared rides in competitive areas, taking into account operational constraints and market demands. This experiment builds upon the semi-synthetic simulation conducted in (Narang et al., 2023), adapting it to our constrained noncooperative game setting.
+k=0
+σ2(A)k ωt−k
+o
+
+2
 
-Consider a ride-share market with n platforms competing in m areas. Each platform  $i \in [n]$  aims to maximize its revenue by determining the quantities it offers at the jth area, denoted as  $\theta_{ij}$ , for all  $j \in [m]$ . Let  $\boldsymbol{\theta}_i = [\theta_{i1}, \cdots, \theta_{im}]^{\top}$ . The total number of rides provided by each platform i cannot exceed a predefined limit  $Q_i$ , given by  $\sum_{j=1}^m \theta_{ij} \leq Q_i$ ,  $\forall i \in [n]$ . Let  $p_j$  denote the demand price
+≤2(n + √n)B
 
-<span id="page-29-0"></span>Figure 6: Convergence of the time-average revenues of three platforms.
+t−1
+X
+
+k=0
+σ2(A)kγt−k,
+
+where the last inequality is based on the result in (A34). Summing the above inequality over t ∈[T]
+yields
+
+T
+X
+
+t=1
+
+n
+X
+
+i=1
+
+λt
+i −λ
+t
+2 ≤2(n + √n)B
+
+T
+X
+
+t=1
+
+t−2
+X
+
+k=0
+σ2(A)kγt−1−k
+
+≤2(n + √n)B
+
+1 −σ2(A)
+
+T
+X
+
+k=1
+γk.
+
+Similarly to the calculation of PT
+t=1
+Pn
+h=1 ∥et
+h∥2
+2 in Section E.3, we have that
+
+T
+X
+
+t=1
+
+n
+X
+
+i=1
+
+λt
+i −λ
+t
+2
+
+2 ≤4(n + √n)2B2
+
+(1 −σ2(A))2
+
+T
+X
+
+k=1
+γk.
+
+F
+Simulation Details
+
+F.1
+Networked Cournot Game
+
+The Cournot game is a foundational model in economic theory (Allaz and Vila, 1993) for analyzing
+oligopolistic competition, where a limited number of ﬁrms dominate a speciﬁc market. In Cournot
+games, all ﬁrms sell a homogeneous commodity and aim to maximize their individual proﬁts by
+independently and simultaneously determining optimal production quantities. The total quantity
+produced by all ﬁrms is constrained by factors such as market capacity, raw material availability, and
+environmental considerations. The proﬁt of each ﬁrm depends not only on its own production quantity
+but also on the quantities chosen by its competitors, as they inﬂuence the demand price determined
+
+27
+
+
+---Page Break---
+Figure 4: The demand prices of three markets.
+
+Figure 5: The serving quantities of ﬁve ﬁrms to three markets.
+
+by the market’s demand curve and the total production quantity. There are strategic interactions
+between ﬁrms and markets in the Cournot game. According to the law of supply and demand, an
+increased production quantity drives down the demand price, and vice versa. The Cournot game model
+has diverse applications in various ﬁelds, including supply chain management, electricity market
+competition, natural resource extraction, online advertising auctions, and the telecommunications
+industry.
+
+In this experiment, we consider a networked Cournot game comprising n ﬁrms selling a single
+commodity across m markets, as illustrated in Fig. 3. Each ﬁrm i ∈[n] determines its output quantity
+θi = col (θi1, · · · , θim) subject to the constraint of its production capacity Qi that Pm
+j=1 θij ≤Qi.
+Here, θij denotes the quantity of player i sold to the jth market. The total quantity allocated to market
+j is limited by its market capacity Bj, satisfying the condition that Pn
+i=1 θij ≤Bj ∀j ∈[m]. Thus,
+the local constraint of player i associated with market j is
+
+gij(θi) = θij −Bj/n, ∀i ∈[n], j ∈[m].
+
+Let gi(θi) := col (gi1(θi), · · · , gim(θi)), ∀i ∈[n].
+
+28
+
+
+---Page Break---
+The cost function of ﬁrm i is deﬁned as
+
+Ji = d⊤
+i θi −
+
+m
+X
+
+j=1
+pjθij,
+
+where di = col (di1, · · · , dim) and dij represents the cost that ﬁrm i sells a unit of its product to the
+jth market, ∀i ∈[n], j ∈[m]. di includes the cost of raw material, transportation, maintenance, etc.
+In Ji, the term pj denotes the unit demand price of market j determined by its market demand curve
+and the total production quantity, given by
+
+pj = ξj + Λj
+
+ 
+
+cj + 1
+
+dj
+
+n
+X
+
+i=1
+θij
+
+!−1
+
+τj
+, ∀j ∈[m],
+(A37)
+
+where cj, dj Λj, and τj > 0 are constants, ξj is a random variable. Due to the interaction between
+ﬁrms and markets, the demand price can ﬂuctuate with production quantities, represented by ξj ∼
+Dj(θ). Note that the quantity-dependent distributions Dj(θ) for all j ∈[m] are unknown by players.
+For any j ∈[m], the variable ξj is deﬁned as
+
+ξj = ξo
+j + ε
+αj
+Pm
+j′=1 αj′
+
+ n
+X
+
+i=1
+θij
+
+!
+
+,
+
+where ξo
+j is the random base component, ε ≥0 represents the performative strength of markets, and
+αj is the relative strength of market j for any j ∈[m]. According to the law of supply and demand,
+an increased production quantity generally decreases a market’s demand price, which corresponds to
+the setup that αj ≤0 for all j ∈[m]. Thus, the objective of each play i ∈[n] in the network Cournot
+game is formulated by
+
+min
+θi∈Ωi
+Epj∼Dj(θij,∀i∈[n]),j∈[m]
+
+
+
+d⊤
+i θi −
+
+m
+X
+
+j=1
+pjθij
+
+
+
+
+
+subject to
+θij +
+X
+
+i′̸=i
+θi′j ≤Bj, ∀j ∈[m].
+
+In the simulation, we set n = 5 and m = 3. The network structure is as depicted in Fig. 3. Each
+element of the communication weight matrix A = (aij)n×n is set to be aij =
+1
+|Ni|, and |Ni| is the
+cardinality of Ni. The production capacity Qi is randomly and uniformly drawn from [10, 12] for all
+i ∈[5], and the market’s capacity Bj is randomly and uniformly drawn from [10, 15] for all j ∈[m].
+All entries in di, ∀i ∈[n] are randomly and uniformly drawn from [1, 1.5]. The distribution of ξo
+j is
+set to min(max(N(2.5, 1), 2.5), 7.5). The performative power αj is randomly and uniformly drawn
+from (−1, 0], for all j ∈[3]. Other settings are: Λj = 10, cj = 10, dj = 5 and τj = 2, ∀j ∈[3].
+
+Fig. 4 compares the demand prices of three markets at PSE and NE with performative strength
+ε = 0.2, 0.4, and 0.6 and Fig. 5 compares the corresponding serving quantities of ﬁve ﬁrms to these
+three markets. The results suggest that, although a larger performative strength leads to a wider gap,
+the difference in these two indicators between the PSE and NE remains insigniﬁcant. This conﬁrms
+the effectiveness of PSE solutions and our distance analysis between the PSE and NE as stated in
+Theorem 3.5.
+
+F.2
+Ride-Share Market
+
+We further examine an example of a ride-share market, where multiple platforms compete to maximize
+their individual revenue by offering shared rides in competitive areas, taking into account opera-
+tional constraints and market demands. This experiment builds upon the semi-synthetic simulation
+conducted in (Narang et al., 2023), adapting it to our constrained noncooperative game setting.
+
+Consider a ride-share market with n platforms competing in m areas. Each platform i ∈[n] aims to
+maximize its revenue by determining the quantities it offers at the jth area, denoted as θij, for all
+j ∈[m]. Let θi = [θi1, · · · , θim]⊤. The total number of rides provided by each platform i cannot
+exceed a predeﬁned limit Qi, given by Pm
+j=1 θij ≤Qi, ∀i ∈[n]. Let pj denote the demand price
+
+29
+
+
+---Page Break---
+Figure 6: Convergence of the time-average revenues of three platforms.
 
 Figure 7: Convergence of the time-average constraint violations at eight areas.
 
-at the jth location, which fluctuates with the total offered quantity at the area following the law of supply and demand. We adopt the same model for  $\{p_j\}$  as in the network Cournot game, given by (A37). Additionally, the maintenance costs associated with platform operations may vary across locations due to factors such as distance or labor costs. Let  $d_i \in \mathbb{R}^m$  represent the cost vector of platform i at all areas. Then, the inverse of the revenue function for each platform can be expressed as
+at the jth location, which ﬂuctuates with the total offered quantity at the area following the law of
+supply and demand. We adopt the same model for {pj} as in the network Cournot game, given by
+(A37). Additionally, the maintenance costs associated with platform operations may vary across
+locations due to factors such as distance or labor costs. Let di ∈Rm represent the cost vector of
+platform i at all areas. Then, the inverse of the revenue function for each platform can be expressed as
 
-<span id="page-29-1"></span>
-$$J_i = -\sum_{j=1}^m p_j \theta_{ij} + \boldsymbol{d}_i^{\mathsf{T}} \boldsymbol{\theta}_i, \forall i \in [n].$$
+Ji = −
 
-Assume that each platform only offers one type of ride. Considering the diverse ride characteristics, such as shape and speed, we use  $h_i$  to denote the spatial occupancy of each ride offered by platform i. The accommodated ride quantity at each location is constrained by  $B_j$  due to parking availability and road conditions, such that  $\sum_{i=1}^n h_i \theta_{ij} \leq B_j$ . Then, the objective of each platform  $i \in [n]$  in the ride-share market is formulated as
+m
+X
 
-$$\begin{aligned} & \min_{\boldsymbol{\theta}_i \in \Omega_i} \quad \mathbb{E}_{p_j \sim \mathcal{D}_j(\boldsymbol{\theta}_{ij}, \forall i \in [n]), \forall j \in [m]} \left[ -\sum_{j=1}^m p_j \boldsymbol{\theta}_{ij} + \boldsymbol{d}_i^\top \boldsymbol{\theta}_i \right] \\ & \text{subject to} \quad h_i \boldsymbol{\theta}_{ij} + \sum_{i' \neq i} h_{i'} \boldsymbol{\theta}_{i'j} \leq B_j, \forall j \in [m]. \end{aligned} \tag{A38}$$
+j=1
+pjθij + d⊤
+i θi, ∀i ∈[n].
 
-The simulation setup is based on dataset from a prior Kaggle competition. Our study focuses on three ride-share platforms (Uber, Lyft, and Via) and eight competing areas within New York. We randomly and uniformly assign the total number of rides,  $Q_i$ , from the range [200,400] for each platform  $i \in [3]$ . Similarly, the accommodated capacity,  $B_j$ , is randomly and uniformly drawn from [50,150] for all  $j \in [8]$ . All entries in  $\mathbf{d}_i$ ,  $\forall i \in [n]$  are randomly and uniformly drawn from [0.2,2.2]. The distribution of  $\xi_j^o$  is set as  $\min(\max(\mathcal{N}(1,1),1),5)$ . Additionally, we set the following values for all areas  $j \in [8]$ :  $\Lambda_j = 5$ ,  $c_j = 5$ ,  $d_j = 5$ , and  $\tau_j = 2$ .
+Assume that each platform only offers one type of ride. Considering the diverse ride characteristics,
+such as shape and speed, we use hi to denote the spatial occupancy of each ride offered by platform i.
+The accommodated ride quantity at each location is constrained by Bj due to parking availability
+and road conditions, such that Pn
+i=1 hiθij ≤Bj. Then, the objective of each platform i ∈[n] in the
+ride-share market is formulated as
 
-Fig. 6 compares the convergence of the time-average revenues of these three platforms: Uber, Lyft, and Via, denoted by  $-\frac{1}{t}\sum_{t'=1}^t \mathbb{E}_{\boldsymbol{p}^t \sim \mathcal{D}(\boldsymbol{\theta}^t)}[J_i(\boldsymbol{p}^t;\boldsymbol{\theta}^{t'})]$ . We consider three performative strengths:
+min
+θi∈Ωi
+Epj∼Dj(θij,∀i∈[n]),∀j∈[m]
 
-<sup>&</sup>lt;sup>2</sup>The data is publicly available at https://www.kaggle.com/brllrb/uber-and-lyft-dataset-boston-ma
+
 
-Figure 8: The normalized distance between  $\theta^t$  and  $\theta^{ne}$ .
+−
 
-<span id="page-30-0"></span> $\varepsilon=0.1,0.2$ , and 0.3. Similarly to Fig. 2 (b), we compare the performance of Algorithm 1, represented by "pse", and the performance of Algorithm 1with perfect knowledge of data distributions  $\mathcal{D}_j(\boldsymbol{\theta})$  for all  $j\in[m]$ . It is observed that, with a mild performative strength  $\varepsilon$ , the revenues achieved by the "pse" are close to those of the "ne" for all three platforms. However, as  $\varepsilon$  increases, the gap between the two approaches widens, although it remains relatively small. This observation confirms the analytical result presented in Theorem 3.5.
+m
+X
 
-Fig. 7 shows the convergence of the time-average constraint violations at eight areas by Algorithm 1, denoted by  $\frac{1}{t}\sum_{t'=1}^t\sum_{i=1}^3 g_{ij}(\boldsymbol{\theta}_i^{t'}), j=1,\cdots,8$ , with performative strengths of  $\varepsilon=0.1,0.2$ , and 0.3. The constraints hold for all three performative strengths. However, as  $\varepsilon$  increases, the platform tends to allocate fewer rides. This may be attributed to larger market fluctuations associated with a higher  $\varepsilon$ , leading to a more conservative allocation.
+j=1
+pjθij + d⊤
+i θi
 
-Fig. 8 compares the normalized distance between  $\boldsymbol{\theta}^t$  and the NE point  $\boldsymbol{\theta}^{\mathrm{ne}}$ , denoted as  $\|\boldsymbol{\theta}^t - \boldsymbol{\theta}^{\mathrm{ne}}\|_2/\|\boldsymbol{\theta}^t\|_2$ , with performative strengths:  $\varepsilon = 0.1$ , 0.2, and 0.3. The result is quantitatively analogous to the findings presented in Fig. 8. Firstly,  $\boldsymbol{\theta}^t$  gradually approaches  $\boldsymbol{\theta}^{\mathrm{ne}}$  with iterations. Secondly, a higher performative strength leads to a wider normalized distance between the convergent point of  $\boldsymbol{\theta}^t$  and  $\boldsymbol{\theta}^{\mathrm{ne}}$ .
+
 
-Fig. 9 compares the demand prices of eight areas and the ride quantities offered to them by three platforms at PSE and NE. We consider performative strengths  $\varepsilon=0.1$  and  $\varepsilon=0.3$ . It is observed that the values of these indicators at the PSE and NE are close to each other when  $\varepsilon=0.1$ . However, a noticeable discrepancy arises when  $\varepsilon=0.3$ .
+
 
-Additionally, we display the demand prices of eight areas in New York in Fig. 10, with different performative strengths:  $\varepsilon=0.1,0.2$ , and 0.3. It can be observed that, while prices vary by location, smaller values of  $\varepsilon$  generally correspond to higher prices. The offered quantities of these three platforms to the eight locations are illustrated in Fig. 11. The results indicate a conservative allocation as the performative strength increases. Furthermore, with the cost of these three platforms at different locations in Fig. 12, we obtain the revenues of the platforms Uber, Lyft, and Via in different areas, as illustrated in Fig. 13. Clearly, performativity has an inverse effect on revenues, and the stronger the performative strength, the lower the revenues.
+subject to
+hiθij +
+X
 
-<span id="page-31-0"></span>Figure 9: The demand prices of eight areas and the ride quantities offered to them by three platforms.
+i′̸=i
+hi′θi′j ≤Bj, ∀j ∈[m].
 
-<span id="page-31-1"></span>Figure 10: The demand prices of different areas.
+(A38)
 
-<span id="page-32-0"></span>Figure 11: The quantities of platforms offered to different areas.
+The simulation setup is based on dataset from a prior Kaggle competition.2 Our study focuses on
+three ride-share platforms (Uber, Lyft, and Via) and eight competing areas within New York. We
+randomly and uniformly assign the total number of rides, Qi, from the range [200, 400] for each
+platform i ∈[3]. Similarly, the accommodated capacity, Bj, is randomly and uniformly drawn from
+[50, 150] for all j ∈[8]. All entries in di, ∀i ∈[n] are randomly and uniformly drawn from [0.2, 2.2].
+The distribution of ξo
+j is set as min(max(N(1, 1), 1), 5). Additionally, we set the following values
+for all areas j ∈[8]: Λj = 5, cj = 5, dj = 5, and τj = 2.
 
-<span id="page-32-1"></span>Figure 12: The cost of platforms in different areas.
+Fig. 6 compares the convergence of the time-average revenues of these three platforms: Uber, Lyft,
+and Via, denoted by −1
 
-<span id="page-33-0"></span>Figure 13: The revenues of platforms in different areas.
+t
+Pt
+t′=1 Ept∼D(θt)[Ji(pt; θt′)]. We consider three performative strengths:
 
-# NeurIPS Paper Checklist
+2The data is publicly available at https://www.kaggle.com/brllrb/uber-and-lyft-dataset-boston-ma
 
-### 1. Claims
+30
 
-Question: Do the main claims made in the abstract and introduction accurately reflect the paper's contributions and scope?
 
+---Page Break---
+Figure 8: The normalized distance between θt and θne.
+
+ε = 0.1, 0.2, and 0.3. Similarly to Fig. 2 (b), we compare the performance of Algorithm 1, represented
+by “pse”, and the performance of Algorithm 1with perfect knowledge of data distributions Dj(θ)
+for all j ∈[m]. It is observed that, with a mild performative strength ε, the revenues achieved by
+the “pse” are close to those of the “ne” for all three platforms. However, as ε increases, the gap
+between the two approaches widens, although it remains relatively small. This observation conﬁrms
+the analytical result presented in Theorem 3.5.
+
+Fig. 7 shows the convergence of the time-average constraint violations at eight areas by Algorithm 1,
+denoted by 1
+
+t
+Pt
+t′=1
+P3
+i=1 gij(θt′
+i ), j = 1, · · · , 8, with performative strengths of ε = 0.1, 0.2, and
+0.3. The constraints hold for all three performative strengths. However, as ε increases, the platform
+tends to allocate fewer rides. This may be attributed to larger market ﬂuctuations associated with a
+higher ε, leading to a more conservative allocation.
+
+Fig. 8 compares the normalized distance between θt and the NE point θne, denoted as ∥θt −
+θne∥2/∥θt∥2, with performative strengths: ε = 0.1, 0.2, and 0.3. The result is quantitatively
+analogous to the ﬁndings presented in Fig. 8. Firstly, θt gradually approaches θne with iterations.
+Secondly, a higher performative strength leads to a wider normalized distance between the convergent
+point of θt and θne.
+
+Fig. 9 compares the demand prices of eight areas and the ride quantities offered to them by three
+platforms at PSE and NE. We consider performative strengths ε = 0.1 and ε = 0.3. It is observed
+that the values of these indicators at the PSE and NE are close to each other when ε = 0.1. However,
+a noticeable discrepancy arises when ε = 0.3.
+
+Additionally, we display the demand prices of eight areas in New York in Fig. 10, with different
+performative strengths: ε = 0.1, 0.2, and 0.3. It can be observed that, while prices vary by location,
+smaller values of ε generally correspond to higher prices. The offered quantities of these three
+platforms to the eight locations are illustrated in Fig. 11. The results indicate a conservative allocation
+as the performative strength increases. Furthermore, with the cost of these three platforms at different
+locations in Fig. 12, we obtain the revenues of the platforms Uber, Lyft, and Via in different areas, as
+illustrated in Fig. 13. Clearly, performativity has an inverse effect on revenues, and the stronger the
+performative strength, the lower the revenues.
+
+31
+
+
+---Page Break---
+Figure 9: The demand prices of eight areas and the ride quantities offered to them by three platforms.
+
+Figure 10: The demand prices of different areas.
+
+32
+
+
+---Page Break---
+Figure 11: The quantities of platforms offered to different areas.
+
+Figure 12: The cost of platforms in different areas.
+
+33
+
+
+---Page Break---
+Figure 13: The revenues of platforms in different areas.
+
+34
+
+
+---Page Break---
+NeurIPS Paper Checklist
+
+1. Claims
+
+Question: Do the main claims made in the abstract and introduction accurately reﬂect the
+paper’s contributions and scope?
 Answer: [Yes]
-
-### 2. Limitations:
+2. Limitations:
 
 Does the paper discuss the limitations of the work performed by the authors? [No]
-
 Answer: [No]
+3. Theory Assumptions and Proofs
 
-### 3. Theory Assumptions and Proofs
-
-Question: For each theoretical result, does the paper provide the full set of assumptions and a complete (and correct) proof?
-
+Question: For each theoretical result, does the paper provide the full set of assumptions and
+a complete (and correct) proof?
 Answer: [Yes]
+4. Experimental Result Reproducibility
 
-#### 4. Experimental Result Reproducibility
-
-Question: Does the paper fully disclose all the information needed to reproduce the main experimental results of the paper to the extent that it affects the main claims and/or conclusions of the paper (regardless of whether the code and data are provided or not)?
-
+Question: Does the paper fully disclose all the information needed to reproduce the main ex-
+perimental results of the paper to the extent that it affects the main claims and/or conclusions
+of the paper (regardless of whether the code and data are provided or not)?
 Answer: [Yes]
+5. Open access to data and code
 
-# 5. Open access to data and code
-
-Question: Does the paper provide open access to the data and code, with sufficient instructions to faithfully reproduce the main experimental results, as described in supplemental material?
-
+Question: Does the paper provide open access to the data and code, with sufﬁcient instruc-
+tions to faithfully reproduce the main experimental results, as described in supplemental
+material?
 Answer: [No]
+6. Experimental Setting/Details
 
-#### 6. Experimental Setting/Details
-
-Question: Does the paper specify all the training and test details (e.g., data splits, hyperparameters, how they were chosen, type of optimizer, etc.) necessary to understand the results?
-
+Question: Does the paper specify all the training and test details (e.g., data splits, hyper-
+parameters, how they were chosen, type of optimizer, etc.) necessary to understand the
+results?
 Answer: [Yes]
+7. Experiment Statistical Signiﬁcance
 
-### 7. Experiment Statistical Significance
-
-Question: Does the paper report error bars suitably and correctly defined or other appropriate information about the statistical significance of the experiments?
-
+Question: Does the paper report error bars suitably and correctly deﬁned or other appropriate
+information about the statistical signiﬁcance of the experiments?
 Answer: [Yes]
+8. Experiments Compute Resources
 
-# 8. Experiments Compute Resources
-
-Question: For each experiment, does the paper provide sufficient information on the computer resources (type of compute workers, memory, time of execution) needed to reproduce the experiments?
-
+Question: For each experiment, does the paper provide sufﬁcient information on the com-
+puter resources (type of compute workers, memory, time of execution) needed to reproduce
+the experiments?
 Answer: [Yes]
+9. Code Of Ethics
 
-# 9. Code Of Ethics
-
-Question: Does the research conducted in the paper conform, in every respect, with the NeurIPS Code of Ethics <https://neurips.cc/public/EthicsGuidelines>?
-
+Question: Does the research conducted in the paper conform, in every respect, with the
+NeurIPS Code of Ethics https://neurips.cc/public/EthicsGuidelines?
 Answer: [Yes]
+10. Broader Impacts
 
-#### 10. Broader Impacts
-
-Question: Does the paper discuss both potential positive societal impacts and negative societal impacts of the work performed?
-
+Question: Does the paper discuss both potential positive societal impacts and negative
+societal impacts of the work performed?
 Answer: [No]
+11. Safeguards
 
-#### 11. Safeguards
+Question: Does the paper describe safeguards that have been put in place for responsible
+release of data or models that have a high risk for misuse (e.g., pretrained language models,
+image generators, or scraped datasets)?
 
-Question: Does the paper describe safeguards that have been put in place for responsible release of data or models that have a high risk for misuse (e.g., pretrained language models, image generators, or scraped datasets)?
+35
 
+
+---Page Break---
 Answer: [NA]
+12. Licenses for existing assets
 
-# 12. Licenses for existing assets
-
-Question: Are the creators or original owners of assets (e.g., code, data, models), used in the paper, properly credited and are the license and terms of use explicitly mentioned and properly respected?
-
+Question: Are the creators or original owners of assets (e.g., code, data, models), used in
+the paper, properly credited and are the license and terms of use explicitly mentioned and
+properly respected?
 Answer: [Yes]
+13. New Assets
 
-# 13. New Assets
+Question: Are new assets introduced in the paper well documented and is the documentation
+provided alongside the assets?
+Answer: [NA]
+14. Crowdsourcing and Research with Human Subjects
 
-Question: Are new assets introduced in the paper well documented and is the documentation provided alongside the assets?
-
+Question: For crowdsourcing experiments and research with human subjects, does the paper
+include the full text of instructions given to participants and screenshots, if applicable, as
+well as details about compensation (if any)?
+Answer: [NA]
+15. Institutional Review Board (IRB) Approvals or Equivalent for Research with Human
+Subjects
+Question: Does the paper describe potential risks incurred by study participants, whether
+such risks were disclosed to the subjects, and whether Institutional Review Board (IRB)
+approvals (or an equivalent approval/review based on the requirements of your country or
+institution) were obtained?
 Answer: [NA]
 
-#### 14. Crowdsourcing and Research with Human Subjects
+36
 
-Question: For crowdsourcing experiments and research with human subjects, does the paper include the full text of instructions given to participants and screenshots, if applicable, as well as details about compensation (if any)?
 
-Answer: [NA]
-
-### 15. Institutional Review Board (IRB) Approvals or Equivalent for Research with Human Subjects
-
-Question: Does the paper describe potential risks incurred by study participants, whether such risks were disclosed to the subjects, and whether Institutional Review Board (IRB) approvals (or an equivalent approval/review based on the requirements of your country or institution) were obtained?
-
-Answer: [NA]
+---Page Break---

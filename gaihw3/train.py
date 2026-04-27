@@ -16,6 +16,8 @@ from sentence_transformers import SentenceTransformer, CrossEncoder
 from sklearn.metrics.pairwise import cosine_similarity
 import faiss
 from rank_bm25 import BM25Okapi
+from dotenv import load_dotenv
+from huggingface_hub import login
 
 @dataclass
 class Config:
@@ -77,41 +79,63 @@ MODEL_NAME = "unsloth/Qwen2.5-3B-Instruct-bnb-4bit"
 MAX_SEQ_LENGTH = 2048
 OUTPUT_DIR = "outputs"
 
-def prepare_data(config: Config) -> Dataset:
+def prepare_data(config: Config, data_file: str = "train") -> Dataset:
     df = pd.read_csv("train.csv")
     with open("classes.json", "r", encoding="utf-8") as f:
         classes = json.load(f)
     class_description = str()
+    idx_to_class = [item["concept"] for item in classes]
     for item in classes:
         class_description += f"{item["concept"]}: {item["concept_desc"]}\n"
+
     
+    # COT_PROMPT = """You are an expert in detecting hallucinations in scientific paper summaries.
+    # Your task is to judge whether the provided [LLM Evaluation] contains hallucinations based on the given [Scientific Evidence], and identify the specific category of the error.
+
+    # [Category Definitions]:
+    # {class_definitions}
+
+    # [Scientific Evidence (Retrieved Chunks)]:
+    # {evidences}
+
+    # [Text to Check]:
+    # {text}
+
+    # Please think Step-by-Step:
+    # 1. Extract the core claims from the [LLM Evaluation].
+    # 2. Cross-reference each claim with the provided [Scientific Evidence].
+    # 3. Identify any inconsistencies or unsupported statements and determine which hallucination category they fall into.
+
+    # Finally, you must output your response in the following format:
+    # [Analysis]: (Your step-by-step reasoning process)
+    # [Conclusion Category]: (Insert only the category index 0-4)"""
+
     COT_PROMPT = """You are an expert in detecting hallucinations in scientific paper summaries.
-    Your task is to judge whether the provided [LLM Evaluation] contains hallucinations based on the given [Scientific Evidence], and identify the specific category of the error.
+Your task is to judge whether the provided [LLM Evaluation] contains hallucinations based on the given [Scientific Evidence], and identify the specific category of the error.
 
-    [Category Definitions]:
-    {class_definitions}
+[Category Definitions]:
+{class_definitions}
 
-    [Scientific Evidence (Retrieved Chunks)]:
-    {evidences}
+[Scientific Evidence (Retrieved Chunks)]:
+{evidences}
 
-    [Text to Check]:
-    {text}
+[Text to Check]:
+{text}
 
-    Please think Step-by-Step:
-    1. Extract the core claims from the [LLM Evaluation].
-    2. Cross-reference each claim with the provided [Scientific Evidence].
-    3. Identify any inconsistencies or unsupported statements and determine which hallucination category they fall into.
+Please think Step-by-Step:
+1. Extract the core claims from the [LLM Evaluation].
+2. Cross-reference each claim with the provided [Scientific Evidence].
+3. Identify any inconsistencies or unsupported statements and determine which hallucination category they fall into.
 
-    Finally, you must output your response in the following format:
-    [Analysis]: (Your step-by-step reasoning process)
-    [Conclusion Category]: (Insert only the category index 0-4)"""
+Finally, output ONLY the category name:"""
     
     embed_model = SentenceTransformer(config.embed_model_name, device="cuda")
+    rerank_model = CrossEncoder(config.rerank_model_name, device="cuda")
     embed_model.max_seq_length = config.max_seq_length
     
     formatted_data = []
     for _, row in df.iterrows():
-        paper_path = Path(f"train/{row['paper_id']}.md")
+        paper_path = Path(f"{data_file}/{row['paper_id']}.md")
         with open(paper_path, "r", encoding="utf-8") as f:
             full_text = f.read()
             
@@ -215,12 +239,11 @@ def prepare_data(config: Config) -> Dataset:
         embeddings = embed_model.encode(
             texts,
             batch_size=64,
-            show_progress_bar=False,
+            show_progress_bar=True,
             normalize_embeddings=True,
             convert_to_numpy=True
         ).astype(np.float32)
         dim = embeddings.shape[1]
-        # 使用 IVF + PQ 壓縮（大規模時使用），小資料集用 Flat
         if len(child_chunks) > 10000:
             nlist = min(256, len(child_chunks) // 10)
             quantizer = faiss.IndexFlatIP(dim)
@@ -247,11 +270,11 @@ def prepare_data(config: Config) -> Dataset:
             show_progress_bar=False,
             normalize_embeddings=True,
             convert_to_numpy=True
-        ).astype(np.float32)
+        ).astype(np.float32).reshape(1, -1)
         faiss_scores, indices = faiss_index.search(query_embedding, top_k)
         vector_results = [(int(idx), float(score)) for idx, score in zip(indices[0], faiss_scores[0]) if idx >= 0]
-        query = query.lower().split()
-        bm25_scores = bm25.get_scores(query)
+        query_list = query.lower().split()
+        bm25_scores = bm25.get_scores(query_list)
         top_indices = np.argsort(bm25_scores)[::-1][:top_k]
         bm25_results = [(int(idx), float(bm25_scores[idx])) for idx in top_indices]
         k = 60
@@ -279,12 +302,11 @@ def prepare_data(config: Config) -> Dataset:
                 vector_rank=info.get("vector_rank", -1),
                 bm25_rank=info.get("bm25_rank", -1),
             ))
-        del rrf_scores, rank_info, embed_model
+        del rrf_scores, rank_info
         gc.collect()
         torch.cuda.empty_cache()
         
         """Reranking"""
-        rerank_model = CrossEncoder(config.rerank_model_name, device="cuda")
         pairs = [(query, c.parent_text) for c in retrieved_results]
         rerank_score = rerank_model.predict(pairs, show_progress_bar=False)
         reranked = sorted(
@@ -304,7 +326,7 @@ def prepare_data(config: Config) -> Dataset:
                 rerank_score=float(score),
                 original_score=candidate.score,
             ))
-        del reranked, rerank_score, pairs, rerank_model
+        del reranked, rerank_score, pairs
         gc.collect()
         torch.cuda.empty_cache()
         
@@ -315,8 +337,8 @@ def prepare_data(config: Config) -> Dataset:
             text = row["text"]
         )
         
-        """response to Qwen"""
-        response = None
+        """Correct response to Qwen"""
+        response = idx_to_class[int(row["label"])]
         
         formatted_data.append({
             "instruction": prompt,
@@ -327,23 +349,55 @@ def prepare_data(config: Config) -> Dataset:
 
 
 
-# --- 5. 自定義 Trainer 以支援加權損失 ---
 class WeightedSFTTrainer(SFTTrainer):
+    def __init__(self, class_weights: torch.Tensor, tokenizer, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.class_weights = class_weights
+        self.tokenizer = tokenizer
+    
     def compute_loss(self, model, inputs, return_outputs=False):
-        labels = inputs.get("labels")
-        # 這裡需要根據 inputs 中的 label 來決定權重
-        # SFT 通常是對整個 sequence 計算 CrossEntropy
-        # 為了簡單處理不平衡，可以在 Data Collator 階段對數量少的樣本進行 Oversampling
-        # 或者在此覆寫 Loss function
-        return super().compute_loss(model, inputs, return_outputs)
+        """
+        計算加權損失，只在 output 部分應用權重
+        """
+        labels = inputs.get("labels").clone()
+        
+        # 獲取模型輸出
+        outputs = model(**inputs)
+        logits = outputs.logits
+        
+        # 計算原始損失（所有 token）
+        loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
+        
+        # 展平
+        loss = loss_fct(
+            logits.view(-1, logits.size(-1)),
+            labels.view(-1)
+        )
+        
+        # 只在非 -100 位置應用權重
+        mask = labels.view(-1) != -100
+        
+        # 根據標籤應用類別權重
+        label_weights = torch.ones_like(labels.view(-1), dtype=torch.float)
+        for class_idx in range(len(self.class_weights)):
+            class_mask = (labels.view(-1) == class_idx) & mask
+            label_weights[class_mask] = self.class_weights[class_idx].item()
+        
+        # 計算加權損失
+        weighted_loss = (loss * label_weights * mask.float()).sum() / mask.sum()
+        
+        return (weighted_loss, outputs) if return_outputs else weighted_loss
 
 
-def train():
+def main():
+    HF_TOKEN = os.getenv("HF_TOKEN")
+    login(token=HF_TOKEN)
     config = Config()
     class_counts = torch.tensor([1910, 1790, 249, 1616, 130], dtype=torch.float)
     class_weights = 1.0 / (class_counts / class_counts.sum())
     class_weights = class_weights / class_weights.mean()  # 正規化
     
+    # Train
     dataset = prepare_data(config)
 
     model, tokenizer = FastLanguageModel.from_pretrained(
@@ -360,24 +414,45 @@ def train():
         lora_dropout = 0.05,
     )
 
-    
-    trainer = SFTTrainer(
-        model = model,
-        tokenizer = tokenizer,
-        train_dataset = dataset,
-        dataset_text_field = "text", # 需根據 formatting_func 調整
-        max_seq_length = MAX_SEQ_LENGTH,
-        args = TrainingArguments(
-            per_device_train_batch_size = 2,
-            gradient_accumulation_steps = 4,
-            warmup_steps = 5,
-            max_steps = 60, # 根據需求調整
-            learning_rate = 2e-4,
-            fp16 = not torch.cuda.is_bf16_supported(),
-            bf16 = torch.cuda.is_bf16_supported(),
-            logging_strategy="none",
-            logging_steps = 1,
-            output_dir = OUTPUT_DIR,
-        ),
+    def formatting_func(examples):
+        """格式化數據"""
+        output_texts = []
+        for instruction, output in zip(examples["instruction"], examples["output"]):
+            text = f"""<|im_start|>system
+            You are an expert in detecting hallucinations in scientific paper summaries.<|im_end|>
+            <|im_start|>user
+            {instruction}<|im_end|>
+            <|im_start|>assistant
+            {output}<|im_end|>"""
+            output_texts.append(text)
+        return {"text": output_texts}
+
+    trainer = WeightedSFTTrainer(
+        class_weights=class_weights,
+        tokenizer=tokenizer,
+        model=model,
+        train_dataset=dataset,
+        formatting_func=formatting_func,
+        max_seq_length=MAX_SEQ_LENGTH,
+        args=TrainingArguments(
+            per_device_train_batch_size=2,
+            gradient_accumulation_steps=4,
+            warmup_steps=5,
+            max_steps=60,
+            learning_rate=2e-4,
+            fp16=not torch.cuda.is_bf16_supported(),
+            bf16=torch.cuda.is_bf16_supported(),
+            logging_strategy="steps",
+            logging_steps=5,
+            output_dir=OUTPUT_DIR,
+            save_strategy="no",
+            eval_strategy="no",
+        )
     )
     trainer.train()
+
+    # Evaluate
+    dataset = prepare_data(config, data_file="eval")
+
+if __name__ == "__main__":
+    main()
