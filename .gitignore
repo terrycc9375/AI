@@ -11,6 +11,7 @@ res/
 dataset/
 *.pt
 *.pth
+*.pkl
 .env
 *cache*/
 *.log
