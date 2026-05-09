@@ -290,7 +290,7 @@ class ResNet2(nn.Module):
         x = self.conv1(x)
         x = self.conv2(x)
         res = self.res_block(x)
-        x = x + res # 簡單的殘差連接
+        x = x + res # residual connection
         return self.classifier(x)
 
 class SimpleMLP(nn.Module):
