@@ -4,6 +4,7 @@ import torch.optim as optim
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+from rich.progress import Progress, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
 
 # =====================================================================
 # 0. 環境與可重複性設定 (Global Configurations)
@@ -174,7 +175,7 @@ class DDPM:
         optimizer = optim.Adam(self.model.parameters(), lr=lr)
         train_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
         
-        print(f"開始訓練 DDPM 系統 (當前設定時間步 T = {self.T})...")
+        print(f"Train DDPM with T = {self.T}")
         for epoch in range(epochs):
             self.model.train()
             epoch_loss = 0.0
@@ -202,10 +203,8 @@ class DDPM:
             avg_loss = epoch_loss / len(dataset)
             self.loss_history.append(avg_loss)
             
-            if (epoch + 1) % 10 == 0 or epoch == 0:
-                print(f"Epoch [{epoch+1}/{epochs}] - MSE Loss: {avg_loss:.6f}")
-                
-        print("DDPM 系統訓練完成。")
+            # if (epoch + 1) % 10 == 0 or epoch == 0:
+            #     print(f"Epoch [{epoch+1}/{epochs}] - MSE Loss: {avg_loss:.6f}")
 
     def plot_loss_curve(self, save_path="ddpm_loss_curve.png"):
         """繪製並儲存訓練損失下降曲線 (Fig.2 要求)"""
@@ -246,7 +245,7 @@ class DDPM:
         # 例如 T=300 時會挑出 [299, 256, 213, 170, 128, 85, 42, 0]
         steps_to_save = np.linspace(self.T - 1, 0, 8, dtype=int)
         
-        print(f"正在執行逆向採樣軌跡生成 (從 t = {self.T-1} 倒扣到 0)...")
+        # print(f"正在執行逆向採樣軌跡生成 (從 t = {self.T-1} 倒扣到 0)...")
         
         # 2. 從最後一步 T-1 開始，倒退迭代回到 0
         for t_val in reversed(range(self.T)):
@@ -274,6 +273,349 @@ class DDPM:
                 
         return trajectory, steps_to_save
 
+    @torch.no_grad()
+    def sample(self, n_samples=3000):
+        """Generate final DDPM samples from pure noise."""
+        self.model.eval()
+        xt = torch.randn(n_samples, 2, device=self.device)
+        for t_val in reversed(range(self.T)):
+            t_tensor = torch.full((n_samples,), t_val, dtype=torch.long, device=self.device)
+            eps_pred = self.model(xt, t_tensor)
+            alpha_t = self.alphas[t_val]
+            alpha_bar_t = self.alphas_bar[t_val]
+            beta_t = self.betas[t_val]
+            z = torch.randn_like(xt) if t_val > 0 else 0.0
+            sigma_t = torch.sqrt(beta_t)
+            xt = (1.0 / torch.sqrt(alpha_t)) * (xt - (beta_t / torch.sqrt(1.0 - alpha_bar_t)) * eps_pred) + sigma_t * z
+        return xt.cpu().numpy()
+
+
+class BasicGAN:
+    """A simple GAN for 2D swiss roll generation."""
+    def __init__(self, latent_dim=16, hidden_dim=128, device=DEVICE, lr=2e-4, betas=(0.5, 0.999)):
+        self.device = device
+        self.latent_dim = latent_dim
+        self.generator = nn.Sequential(
+            nn.Linear(latent_dim, hidden_dim),
+            nn.LeakyReLU(0.2),
+            nn.BatchNorm1d(hidden_dim),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.LeakyReLU(0.2),
+            nn.BatchNorm1d(hidden_dim),
+            nn.Linear(hidden_dim, 2)
+        ).to(self.device)
+        self.discriminator = nn.Sequential(
+            nn.Linear(2, hidden_dim),
+            nn.LeakyReLU(0.2),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.LeakyReLU(0.2),
+            nn.Linear(hidden_dim, 1)
+        ).to(self.device)
+        self.gen_optimizer = optim.Adam(self.generator.parameters(), lr=lr * 3, betas=betas)
+        self.dis_optimizer = optim.Adam(self.discriminator.parameters(), lr=lr, betas=betas)
+        self.criterion = nn.BCEWithLogitsLoss()
+        self.loss_history = {'gen': [], 'disc': []}
+
+    def train(self, dataset, batch_size=256, epochs=200, record_n=8, record_path="gan_swiss_roll.png"):
+        """Train GAN with real swiss roll points and record snapshots.
+
+        record_n: number of snapshots to collect (including epoch 1 and final epoch)
+        record_path: output path for composite image containing the snapshots
+        """
+        train_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        real_label = 0.9
+        fake_label = 0.0
+
+        record_epochs = set(np.linspace(1, epochs, record_n, dtype=int))
+        snapshots = {}
+
+        with Progress(
+            TextColumn("[#238ce8][progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TextColumn("[#faac2f]Fake Rate: {task.fields[test_acc]:>5.2f}%"),
+            TimeRemainingColumn(),
+        ) as progress:
+            main_task = progress.add_task("Training Progress", total=epochs, test_acc=0.0)
+            for epoch in range(1, epochs + 1):
+                self.generator.train()
+                self.discriminator.train()
+                gen_loss_epoch = 0.0
+                disc_loss_epoch = 0.0
+                fooled = 0
+                total_fake = 0
+
+                for real_data in train_loader:
+                    real_data = real_data.to(self.device)
+                    b_size = real_data.size(0)
+                    label_real = torch.full((b_size, 1), real_label, device=self.device)
+                    label_fake = torch.full((b_size, 1), fake_label, device=self.device)
+                    noise = torch.randn(b_size, self.latent_dim, device=self.device)
+                    fake_data = self.generator(noise)
+
+                    self.dis_optimizer.zero_grad()
+                    output_real = self.discriminator(real_data)
+                    loss_real = self.criterion(output_real, label_real)
+                    output_fake = self.discriminator(fake_data.detach())
+                    loss_fake = self.criterion(output_fake, label_fake)
+                    loss_disc = loss_real + loss_fake
+                    loss_disc.backward()
+                    self.dis_optimizer.step()
+
+                    self.gen_optimizer.zero_grad()
+                    output_fake_for_gen = self.discriminator(fake_data)
+                    loss_gen = self.criterion(output_fake_for_gen, label_real)
+                    loss_gen.backward()
+                    self.gen_optimizer.step()
+
+                    gen_loss_epoch += loss_gen.item() * b_size
+                    disc_loss_epoch += loss_disc.item() * b_size
+                    # discriminator outputs logits when using BCEWithLogitsLoss; use sigmoid to get probabilities
+                    fooled += (torch.sigmoid(output_fake) >= 0.5).sum().item()
+                    total_fake += b_size
+
+                self.loss_history['gen'].append(gen_loss_epoch / len(dataset))
+                self.loss_history['disc'].append(disc_loss_epoch / len(dataset))
+                fake_rate = fooled / total_fake if total_fake > 0 else 0.0
+                progress.update(
+                    main_task,
+                    advance=1,
+                    description=f"Epoch {epoch}/{epochs}",
+                    test_acc=fake_rate * 100,
+                )
+
+                if epoch in record_epochs:
+                    snapshots[epoch] = self.sample(n_samples=3000)
+
+        # After training, compose snapshots into a single figure and save
+        if len(snapshots) > 0:
+            sorted_epochs = sorted(snapshots.keys())
+            cols = 4
+            rows = int(np.ceil(len(sorted_epochs) / cols))
+            fig, axes = plt.subplots(rows, cols, figsize=(4 * cols, 4 * rows))
+            axes = axes.flatten()
+            for i, e in enumerate(sorted_epochs):
+                pts = snapshots[e]
+                axes[i].scatter(pts[:, 0], pts[:, 1], s=1.5, alpha=0.6, color='tab:orange')
+                axes[i].set_title(f"epoch={e}")
+                axes[i].set_xlim(-2.5, 2.5)
+                axes[i].set_ylim(-2.5, 2.5)
+                axes[i].set_aspect('equal')
+            # hide any unused axes
+            for j in range(i + 1, rows * cols):
+                axes[j].axis('off')
+            plt.tight_layout()
+            plt.savefig(record_path)
+
+    def save_model(self, path="gan_swiss_roll.pth"):
+        """Save generator and discriminator state."""
+        torch.save({
+            'generator': self.generator.state_dict(),
+            'discriminator': self.discriminator.state_dict()
+        }, path)
+
+    def load_model(self, path="gan_swiss_roll.pth"):
+        """Load generator and discriminator state."""
+        checkpoint = torch.load(path, map_location=self.device)
+        self.generator.load_state_dict(checkpoint['generator'])
+        self.discriminator.load_state_dict(checkpoint['discriminator'])
+
+    def sample(self, n_samples=3000):
+        """Generate swiss roll samples from random latent vectors."""
+        self.generator.eval()
+        with torch.no_grad():
+            noise = torch.randn(n_samples, self.latent_dim, device=self.device)
+            samples = self.generator(noise).cpu().numpy()
+        self.generator.train()
+        return samples
+
+    def plot_loss_curves(self, save_path="basic_gan_loss_curves.png"):
+        """Plot and save generator and discriminator loss curves."""
+        fig, ax = plt.subplots(figsize=(10, 6))
+        epochs = range(1, len(self.loss_history['gen']) + 1)
+        ax.plot(epochs, self.loss_history['gen'], label='Generator Loss', color='tab:blue', linewidth=2)
+        ax.plot(epochs, self.loss_history['disc'], label='Discriminator Loss', color='tab:orange', linewidth=2)
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel('Loss')
+        ax.set_title('BasicGAN Training Loss Curves')
+        ax.grid(True, linestyle='--', alpha=0.6)
+        ax.legend()
+        plt.tight_layout()
+        plt.savefig(save_path)
+        plt.close()
+
+
+class AdvancedGAN:
+    """GAN with hinge loss."""
+    def __init__(self, latent_dim=16, hidden_dim=128, device=DEVICE, lr=1e-4, betas=(0.5, 0.999)):
+        self.device = device
+        self.latent_dim = latent_dim
+        self.generator = nn.Sequential(
+            nn.Linear(latent_dim, hidden_dim),
+            nn.LeakyReLU(0.2),
+            nn.BatchNorm1d(hidden_dim),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.LeakyReLU(0.2),
+            nn.BatchNorm1d(hidden_dim),
+            nn.Linear(hidden_dim, 2)
+        ).to(self.device)
+        self.discriminator = nn.Sequential(
+            nn.Linear(2, hidden_dim),
+            nn.LeakyReLU(0.2),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.LeakyReLU(0.2),
+            nn.Linear(hidden_dim, 1)
+        ).to(self.device)
+        self.gen_optimizer = optim.Adam(self.generator.parameters(), lr=lr * 3, betas=betas)
+        self.dis_optimizer = optim.Adam(self.discriminator.parameters(), lr=lr, betas=betas)
+        self.loss_history = {'gen': [], 'disc': []}
+
+    def train(self, dataset, batch_size=256, epochs=200, record_n=8, record_path="advanced_gan_swiss_roll.png"):
+        """Train GAN using hinge loss."""
+        train_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        record_epochs = set(np.linspace(1, epochs, record_n, dtype=int))
+        snapshots = {}
+
+        with Progress(
+            TextColumn("[#238ce8][progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TextColumn("[#faac2f]Fake Rate: {task.fields[test_acc]:>5.2f}%"),
+            TimeRemainingColumn(),
+        ) as progress:
+            main_task = progress.add_task("Training Progress", total=epochs, test_acc=0.0)
+            for epoch in range(1, epochs + 1):
+                self.generator.train()
+                self.discriminator.train()
+                gen_loss_epoch = 0.0
+                disc_loss_epoch = 0.0
+                fooled = 0
+                total_fake = 0
+
+                for real_data in train_loader:
+                    real_data = real_data.to(self.device)
+                    b_size = real_data.size(0)
+                    noise = torch.randn(b_size, self.latent_dim, device=self.device)
+                    fake_data = self.generator(noise)
+
+                    # Discriminator hinge loss
+                    self.dis_optimizer.zero_grad()
+                    output_real = self.discriminator(real_data)
+                    output_fake = self.discriminator(fake_data.detach())
+                    loss_real = torch.mean(torch.relu(1.0 - output_real))
+                    loss_fake = torch.mean(torch.relu(1.0 + output_fake))
+                    loss_disc = loss_real + loss_fake
+                    loss_disc.backward()
+                    self.dis_optimizer.step()
+
+                    # Generator hinge loss
+                    self.gen_optimizer.zero_grad()
+                    output_fake_for_gen = self.discriminator(fake_data)
+                    loss_gen = -torch.mean(output_fake_for_gen)
+                    loss_gen.backward()
+                    self.gen_optimizer.step()
+
+                    gen_loss_epoch += loss_gen.item() * b_size
+                    disc_loss_epoch += loss_disc.item() * b_size
+                    fooled += (output_fake >= 0.0).sum().item()
+                    total_fake += b_size
+
+                self.loss_history['gen'].append(gen_loss_epoch / len(dataset))
+                self.loss_history['disc'].append(disc_loss_epoch / len(dataset))
+                fake_rate = fooled / total_fake if total_fake > 0 else 0.0
+                progress.update(
+                    main_task,
+                    advance=1,
+                    description=f"Epoch {epoch}/{epochs}",
+                    test_acc=fake_rate * 100,
+                )
+
+                if epoch in record_epochs:
+                    snapshots[epoch] = self.sample(n_samples=3000)
+
+        if len(snapshots) > 0:
+            sorted_epochs = sorted(snapshots.keys())
+            cols = 4
+            rows = int(np.ceil(len(sorted_epochs) / cols))
+            fig, axes = plt.subplots(rows, cols, figsize=(4 * cols, 4 * rows))
+            axes = axes.flatten()
+            for i, e in enumerate(sorted_epochs):
+                pts = snapshots[e]
+                axes[i].scatter(pts[:, 0], pts[:, 1], s=1.5, alpha=0.6, color='tab:orange')
+                axes[i].set_title(f"epoch={e}")
+                axes[i].set_xlim(-2.5, 2.5)
+                axes[i].set_ylim(-2.5, 2.5)
+                axes[i].set_aspect('equal')
+            for j in range(i + 1, rows * cols):
+                axes[j].axis('off')
+            plt.tight_layout()
+            plt.savefig(record_path)
+
+    def save_model(self, path="advanced_gan_swiss_roll.pth"):
+        """Save generator and discriminator state."""
+        torch.save({
+            'generator': self.generator.state_dict(),
+            'discriminator': self.discriminator.state_dict()
+        }, path)
+
+    def load_model(self, path="advanced_gan_swiss_roll.pth"):
+        """Load generator and discriminator state."""
+        checkpoint = torch.load(path, map_location=self.device)
+        self.generator.load_state_dict(checkpoint['generator'])
+        self.discriminator.load_state_dict(checkpoint['discriminator'])
+
+    def sample(self, n_samples=3000):
+        """Generate swiss roll samples from random latent vectors."""
+        self.generator.eval()
+        with torch.no_grad():
+            noise = torch.randn(n_samples, self.latent_dim, device=self.device)
+            samples = self.generator(noise).cpu().numpy()
+        self.generator.train()
+        return samples
+
+    def plot_loss_curves(self, save_path="advanced_gan_loss_curves.png"):
+        """Plot and save generator and discriminator loss curves."""
+        fig, ax = plt.subplots(figsize=(10, 6))
+        epochs = range(1, len(self.loss_history['gen']) + 1)
+        ax.plot(epochs, self.loss_history['gen'], label='Generator Loss', color='tab:blue', linewidth=2)
+        ax.plot(epochs, self.loss_history['disc'], label='Discriminator Loss', color='tab:orange', linewidth=2)
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel('Loss')
+        ax.set_title('AdvancedGAN Training Loss Curves')
+        ax.grid(True, linestyle='--', alpha=0.6)
+        ax.legend()
+        plt.tight_layout()
+        plt.savefig(save_path)
+        plt.close()
+
+def gaussian_kernel(x, y, sigma=1.0):
+    x = torch.as_tensor(x, dtype=torch.float32)
+    y = torch.as_tensor(y, dtype=torch.float32)
+    x_norm = (x ** 2).sum(dim=1, keepdim=True)
+    y_norm = (y ** 2).sum(dim=1, keepdim=True)
+    dist = x_norm + y_norm.t() - 2.0 * x @ y.t()
+    return torch.exp(-dist / (2.0 * sigma ** 2))
+
+
+def compute_mmd(x, y, sigma=1.0):
+    """Compute the RBF-kernel MMD between two point clouds."""
+    x = torch.as_tensor(x, dtype=torch.float32)
+    y = torch.as_tensor(y, dtype=torch.float32)
+    Kxx = gaussian_kernel(x, x, sigma)
+    Kyy = gaussian_kernel(y, y, sigma)
+    Kxy = gaussian_kernel(x, y, sigma)
+    mmd = Kxx.mean() + Kyy.mean() - 2.0 * Kxy.mean()
+    return mmd.item()
+
+
+def chamfer_distance(x, y):
+    """Compute symmetric Chamfer distance between two point clouds."""
+    x = torch.as_tensor(x, dtype=torch.float32)
+    y = torch.as_tensor(y, dtype=torch.float32)
+    dxy = torch.cdist(x, y, p=2)
+    dist_x = dxy.min(dim=1).values
+    dist_y = dxy.min(dim=0).values
+    return (dist_x.mean() + dist_y.mean()).item()
 
 
 def plot_reverse_trajectory(trajectory, steps_to_save, T):
@@ -352,47 +694,88 @@ def p1():
     Part 1
     """
     print("=== [Part 1.1] ===")
-    # 1. 產生標準化瑞士捲資料集
-    print("正在生成瑞士捲點雲資料...")
     swiss_data = generate_swiss_roll(n_samples=3000, noise_std=0.05)
-    # 2. 初始化你的 DDPM 引擎
     ddpm_system = DDPM(T=300, hidden_dim=1024, device=DEVICE)
-    # 3. 測試並繪製前向加噪變化圖 (Fig.1)
     run_forward_diffusion_demo(ddpm_system, swiss_data)
-    # 4. 開始訓練逆向網路
     ddpm_system.train(swiss_data, batch_size=64, epochs=200, lr=1e-3)
-    # 5. 繪製並儲存訓練 Loss 曲線 (Fig.2)
     ddpm_system.plot_loss_curve(save_path=f"ddpm_loss_curve_T{ddpm_system.T}.png")
-    # 6. 儲存訓練成果權重
     ddpm_system.save_weights(path=f"ddpm_weights_T{ddpm_system.T}.pth")
 
+    print("=== [Part 1.2] ===")
+    ddpm_variant = DDPM(T=50 , hidden_dim=1024, device=DEVICE)
+    run_forward_diffusion_demo(ddpm_variant, swiss_data)
+    ddpm_variant.train(swiss_data, batch_size=64, epochs=200, lr=1e-3)
+    ddpm_variant.plot_loss_curve(save_path=f"ddpm_loss_curve_T{ddpm_variant.T}.png")
+    traj_var, steps_var = ddpm_variant.p_sample_loop(n_samples=3000)
+    plot_reverse_trajectory(traj_var, steps_var, ddpm_variant.T)
 
+    ddpm_variant = DDPM(T=1000, hidden_dim=1024, device=DEVICE)
+    run_forward_diffusion_demo(ddpm_variant, swiss_data)
+    ddpm_variant.train(swiss_data, batch_size=64, epochs=200, lr=1e-3)
+    ddpm_variant.plot_loss_curve(save_path=f"ddpm_loss_curve_T{ddpm_variant.T}.png")
+    traj_var, steps_var = ddpm_variant.p_sample_loop(n_samples=3000)
+    plot_reverse_trajectory(traj_var, steps_var, ddpm_variant.T)
 
     print("=== [Part 1.3] ===")
-    # 7. 執行逆向採樣並畫出軌跡 (Fig.2)
     traj, steps = ddpm_system.p_sample_loop(n_samples=3000)
     plot_reverse_trajectory(traj, steps, ddpm_system.T)
 
+def p2():
+    """Train DDPM and GANs, then compare all models using MMD."""
+    swiss_data = generate_swiss_roll(n_samples=3000, noise_std=0.05)
 
+    print("=== Training DDPM ===")
+    ddpm = DDPM(T=300, hidden_dim=1024, device=DEVICE)
+    ddpm.train(swiss_data, batch_size=64, epochs=200, lr=1e-3)
+    ddpm.save_weights(path="ddpm_weights.pth")
+    fake_ddpm = ddpm.sample(n_samples=3000)
 
-    print("=== [Part 1.2] ===")
-    T_variant = 50 
-    ddpm_variant = DDPM(T_variant , hidden_dim=1024, device=DEVICE)
-    run_forward_diffusion_demo(ddpm_variant, swiss_data)
-    ddpm_variant.train(swiss_data, batch_size=64, epochs=200, lr=1e-3)
-    ddpm_variant.plot_loss_curve(save_path=f"ddpm_loss_curve_T{ddpm_variant.T}.png")
-    traj_var, steps_var = ddpm_variant.p_sample_loop(n_samples=3000)
-    plot_reverse_trajectory(traj_var, steps_var, ddpm_variant.T)
+    print("=== Training BasicGAN ===")
+    gan = BasicGAN(latent_dim=64, hidden_dim=256, device=DEVICE, lr=1e-4)
+    gan.train(swiss_data, batch_size=256, epochs=300)
+    gan.plot_loss_curves()
+    gan.save_model(path="basic_gan.pth")
+    fake_basic = gan.sample(n_samples=3000)
 
-    T_variant = 1000
-    ddpm_variant = DDPM(T_variant , hidden_dim=1024, device=DEVICE)
-    run_forward_diffusion_demo(ddpm_variant, swiss_data)
-    ddpm_variant.train(swiss_data, batch_size=64, epochs=200, lr=1e-3)
-    ddpm_variant.plot_loss_curve(save_path=f"ddpm_loss_curve_T{ddpm_variant.T}.png")
-    traj_var, steps_var = ddpm_variant.p_sample_loop(n_samples=3000)
-    plot_reverse_trajectory(traj_var, steps_var, ddpm_variant.T)
+    print("=== Training AdvancedGAN ===")
+    gan2 = AdvancedGAN(latent_dim=32, hidden_dim=256, device=DEVICE, lr=1e-4)
+    gan2.train(swiss_data, batch_size=256, epochs=300)
+    gan2.plot_loss_curves()
+    gan2.save_model(path="advanced_gan.pth")
+    fake_advanced = gan2.sample(n_samples=3000)
+
+    real_samples = swiss_data.numpy()
+    sigma_values = [0.1, 0.5, 1.0, 2.0]
+    print("\n=== MMD results for multiple sigma values ===")
+    for sigma in sigma_values:
+        mmd_ddpm = compute_mmd(real_samples, fake_ddpm, sigma=sigma)
+        mmd_basic = compute_mmd(real_samples, fake_basic, sigma=sigma)
+        mmd_advanced = compute_mmd(real_samples, fake_advanced, sigma=sigma)
+        print(f"sigma={sigma:>3.1f} | DDPM: {mmd_ddpm:.6f} | BasicGAN: {mmd_basic:.6f} | AdvancedGAN: {mmd_advanced:.6f}")
+
+    mmd_ddpm = compute_mmd(real_samples, fake_ddpm, sigma=1.0)
+    mmd_basic = compute_mmd(real_samples, fake_basic, sigma=1.0)
+    mmd_advanced = compute_mmd(real_samples, fake_advanced, sigma=1.0)
+
+    print("\n=== Summary at sigma=1.0 ===")
+    print(f"DDPM MMD: {mmd_ddpm:.6f}")
+    print(f"BasicGAN MMD: {mmd_basic:.6f}")
+    print(f"AdvancedGAN MMD: {mmd_advanced:.6f}")
+    best_model = min([('DDPM', mmd_ddpm), ('BasicGAN', mmd_basic), ('AdvancedGAN', mmd_advanced)], key=lambda item: item[1])
+    print(f"Best model by MMD at sigma=1.0: {best_model[0]} (MMD={best_model[1]:.6f})")
+
+    print("\n=== Chamfer distance (DDPM vs AdvancedGAN) ===")
+    chamfer_ddpm = chamfer_distance(real_samples, fake_ddpm)
+    chamfer_advanced = chamfer_distance(real_samples, fake_advanced)
+    print(f"DDPM Chamfer: {chamfer_ddpm:.6f}")
+    print(f"AdvancedGAN Chamfer: {chamfer_advanced:.6f}")
+    if chamfer_ddpm < chamfer_advanced:
+        print("DDPM is better by Chamfer distance.")
+    elif chamfer_advanced < chamfer_ddpm:
+        print("AdvancedGAN is better by Chamfer distance.")
+    else:
+        print("DDPM and AdvancedGAN have the same Chamfer distance.")
 
 
 if __name__ == "__main__":
-    # 執行主包裝函式
-    p1()
+    p2()
