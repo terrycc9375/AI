@@ -7,7 +7,6 @@ __pycache__/
 *checkpoint*/
 scoring_program/
 best_model/
-res/
 dataset/
 *.pt
 *.pth
