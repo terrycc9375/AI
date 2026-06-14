@@ -6,6 +6,7 @@ import math
 import numpy as np
 import scipy.stats
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 def pull_arm(arm: int) -> int:
     """
@@ -278,7 +279,56 @@ def run_ucb():
     fig2.savefig(f'{FOLDER}/ucb_scales.png')
 
 def run_thompson_sampling():
-    pass
+    def thompson_sampling(alpha: int, beta: int):
+        counts = np.zeros(3)
+        wins = np.zeros(3)
+        alphas = np.ones(3) * alpha
+        betas = np.ones(3) * beta
+        for _ in range(NUM_TRIALS):
+            samples = [scipy.stats.beta(alphas[i], betas[i]).rvs() for i in range(3)]
+            arm = np.argmax(samples)
+            win = int(pull_arm(arm) > 0)
+            counts[arm] += 1
+            wins[arm] += win
+            alphas[arm] += win
+            betas[arm] += 1 - win
+        return np.sum(wins)
+    
+    """Vary Thompson Sampling with Beta(alpha, beta) prior where alpha in [1, 5] and beta in [1, 5]"""
+    heatmap_data = np.zeros((10, 10))
+    alpha_range = range(1, 11)
+    beta_range = range(1, 11)
+    results = np.ndarray((100, 10))
+    
+    for i, alpha in enumerate(alpha_range):
+        for j, beta in enumerate(beta_range):
+            group = [thompson_sampling(alpha, beta) for _ in range(10)]
+            heatmap_data[i, j] = np.mean(group)
+            results[i*10 + j] = group
+
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(
+        heatmap_data, 
+        annot=True, 
+        fmt='.0f', 
+        cmap='YlGnBu',
+        xticklabels=[f'β={b}' for b in beta_range],
+        yticklabels=[f'α={a}' for a in alpha_range],
+        cbar_kws={'label': 'Total Win Count'}
+    )
+    plt.title('Thompson Sampling Win count Heatmap', fontsize=14, pad=15)
+    plt.xlabel('Beta ($\\beta$) prior', fontsize=12)
+    plt.ylabel('Alpha ($\\alpha$) prior', fontsize=12)
+    plt.tight_layout()
+    plt.savefig(f"Thompson_sampling_varing_prior.png")
+
+    f, p = scipy.stats.f_oneway(*results)
+    print("Null hypothesis: different priors don't affect the final results")
+    print("Significant level = 0.05")
+    print(f"F-statistic: {f:.4f}\np-value: {p:.4e}")
+    if p < 0.05: print("Reject H0")
+    else: print("Failed to reject H0")
+
 
 if __name__ == "__main__":
     """Global settings"""
@@ -311,8 +361,8 @@ if __name__ == "__main__":
         1. Use different priors, e.g., Beta(2, 2), Beta(5, 5), Beta(1, 3), etc.
         2. Use larger number of trials, e.g., 10,000 or 100,000.
     """
-    run_epsilon_greedy()
-    run_ucb()
+    # run_epsilon_greedy()
+    # run_ucb()
     run_thompson_sampling()
 
 
