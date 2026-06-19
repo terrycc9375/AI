@@ -184,16 +184,13 @@ class UNet2DConditionModel(nn.Module):
         return self.out(h)
 
 class DiffusionPipeline(nn.Module):
-    def __init__(self, model, num_steps=1000, beta_start=1e-4, beta_end=0.02):
+    def __init__(self, model, device, num_steps=1000, beta_start=1e-4, beta_end=0.02):
         super().__init__()
         self.model = model
         self.num_steps = num_steps
-        betas = torch.linspace(beta_start, beta_end, num_steps)
-        alphas = 1.0 - betas
-        alphas_cumprod = torch.cumprod(alphas, dim=0)
-        self.register_buffer('betas', betas)
-        self.register_buffer('alphas', alphas)
-        self.register_buffer('alphas_cumprod', alphas_cumprod)
+        self.betas = torch.linspace(beta_start, beta_end, num_steps, device=device)
+        self.alphas = (1.0 - self.betas).to(device)
+        self.alphas_cumprod = torch.cumprod(self.alphas, dim=0).to(device)
         
     def add_noise(self, x_0, t, noise=None):
         if noise is None:
@@ -346,7 +343,7 @@ if __name__ == "__main__":
     eval_dataloader = DataLoader(eval_dataset, batch_size=BATCH_SIZE, shuffle=False, drop_last=False)
     
     unet = UNet2DConditionModel().to(device)
-    pipeline = DiffusionPipeline(unet, num_steps=1000)
+    pipeline = DiffusionPipeline(unet, device, num_steps=1000)
     optimizer = torch.optim.AdamW(unet.parameters(), lr=1e-4)
     
     tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-base-patch32")
