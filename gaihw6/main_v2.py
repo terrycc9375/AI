@@ -185,6 +185,7 @@ class UNet2DConditionModel(nn.Module):
 
 class DiffusionPipeline(nn.Module):
     def __init__(self, model, num_steps=1000, beta_start=1e-4, beta_end=0.02):
+        super().__init__()
         self.model = model
         self.num_steps = num_steps
         self.betas = torch.linspace(beta_start, beta_end, num_steps)
