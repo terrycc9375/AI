@@ -188,12 +188,12 @@ class DiffusionPipeline(nn.Module):
         super().__init__()
         self.model = model
         self.num_steps = num_steps
-        self.betas = torch.linspace(beta_start, beta_end, num_steps)
-        self.alphas = 1.0 - self.betas
-        self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
-        self.register_buffer('betas', self.betas)
-        self.register_buffer('alphas', self.alphas)
-        self.register_buffer('alphas_cumprod', self.alphas_cumprod)
+        betas = torch.linspace(beta_start, beta_end, num_steps)
+        alphas = 1.0 - betas
+        alphas_cumprod = torch.cumprod(alphas, dim=0)
+        self.register_buffer('betas', betas)
+        self.register_buffer('alphas', alphas)
+        self.register_buffer('alphas_cumprod', alphas_cumprod)
         
     def add_noise(self, x_0, t, noise=None):
         if noise is None:
