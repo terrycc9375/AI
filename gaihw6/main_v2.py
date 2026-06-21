@@ -1,4 +1,13 @@
 import os
+import warnings
+
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+from transformers.utils import logging
+logging.set_verbosity_error()
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", message=".*The parameter 'pretrained' is deprecated.*")
+
+
 import glob
 import time
 import math
@@ -281,6 +290,13 @@ def sample(
         noise_pred = noise_pred_uncond + cfg_scale * (noise_pred_cond - noise_pred_uncond)
 
         x = scheduler.step(noise_pred, t, x).prev_sample
+
+        # Dynamic Threshold
+        # abs_x = torch.abs(x)
+        # s = torch.quantile(abs_x.reshape(b, -1), 0.99, dim=1)
+        # s = torch.clamp(s, min=1.0)
+        # s = s[:, None, None, None]
+        # x = torch.clamp(x, min=-s, max=s) / s
         
     return (x + 1.0) / 2.0
 
@@ -345,9 +361,9 @@ def train_diffusion(
             epoch_task = progress.add_task(f"Epoch {epoch+1}/{epochs}", total=len(dataloader))
             for images, prompts in dataloader:
                 images = images.to(device)
-                tokens = tokenizer(prompts, padding="max_length", max_length=77, return_tensors="pt")
+                tokens = tokenizer(prompts, padding="max_length", max_length=77, return_tensors="pt").to(device)
                 with torch.no_grad():
-                    context = text_encoder(tokens.input_ids.to(device)).last_hidden_state
+                    context = text_encoder(**tokens).last_hidden_state
                 if np.random.rand() < 0.15:
                     context = torch.zeros_like(context)
                 # t = torch.randint(0, pipeline.num_steps, (images.shape[0],), device=device).long()
@@ -359,6 +375,7 @@ def train_diffusion(
                 pred_noise = unet(noisy_images, t, context)
                 loss = F.mse_loss(pred_noise, noise)
                 loss.backward()
+                # torch.nn.utils.clip_grad_norm_(unet.parameters(), 1.0)
                 optimizer.step()
                 progress.advance(epoch_task)
             progress.remove_task(epoch_task)
@@ -367,9 +384,6 @@ def train_diffusion(
 def generate_save_and_evaluate_fid(unet, scheduler, dataloader, tokenizer, text_encoder, evaluator, device, num_images=2000, batch_size=32, output_dir="generated_images/", ddim_steps=100):
     unet.eval()
     
-    # ==========================================
-    # 第一部分：先進行評估 (計算 FID 與 CLIP Score)
-    # ==========================================
     real_features_list = []
     gen_features_list = []
     clip_scores = []
@@ -380,15 +394,16 @@ def generate_save_and_evaluate_fid(unet, scheduler, dataloader, tokenizer, text_
         BarColumn(),
         TaskProgressColumn(),
         TimeRemainingColumn(),
+        TimeElapsedColumn(),
     ) as progress:
         task = progress.add_task("Evaluating", total=(num_images // batch_size) + 1)
         for images, prompts in dataloader:
             if eval_count >= num_images:
                 break
             images = images.to(device)
-            tokens = tokenizer(prompts, padding="max_length", max_length=77, return_tensors="pt")
+            tokens = tokenizer(prompts, padding="max_length", max_length=77, return_tensors="pt").to(device)
             with torch.no_grad():
-                context = text_encoder(tokens.input_ids.to(device)).last_hidden_state
+                context = text_encoder(**tokens).last_hidden_state
                 gen_images = sample(unet, scheduler, context, cfg_scale=3.0, steps=ddim_steps)
             real_feats = evaluator.get_inception_features((images + 1.0) / 2.0)
             gen_feats = evaluator.get_inception_features(gen_images)
@@ -420,14 +435,15 @@ def generate_save_and_evaluate_fid(unet, scheduler, dataloader, tokenizer, text_
         BarColumn(),
         TaskProgressColumn(),
         TimeRemainingColumn(),
+        TimeElapsedColumn(),
     ) as progress:
         task = progress.add_task("Generating", total=num_images // batch_size + 1)
         for i in range(0, num_images, batch_size):
             batch_prompts = all_prompts[i : i + batch_size]
             
-            tokens = tokenizer(batch_prompts, padding="max_length", max_length=77, return_tensors="pt")
+            tokens = tokenizer(batch_prompts, padding="max_length", max_length=77, return_tensors="pt").to(device)
             with torch.no_grad():
-                context = text_encoder(tokens.input_ids.to(device)).last_hidden_state
+                context = text_encoder(**tokens).last_hidden_state
                 gen_images = sample(unet, scheduler, context, cfg_scale=3.0, steps=ddim_steps)
                 
             for j in range(gen_images.shape[0]):
@@ -448,7 +464,7 @@ if __name__ == "__main__":
 
     IMG_SIZE = 64
     BATCH_SIZE = 32
-    EPOCHS = 1
+    EPOCHS = 150
 
     train_dir = os.path.join("dataset", "trainset")
     if not os.path.exists(train_dir):
@@ -468,7 +484,8 @@ if __name__ == "__main__":
         beta_end=0.02,
         beta_schedule="linear",
         prediction_type="epsilon",
-        clip_sample=False,
+        clip_sample=True,
+        clip_sample_range=1.0,
     )
     optimizer = torch.optim.AdamW(unet.parameters(), lr=1e-4)
     
