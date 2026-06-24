@@ -184,108 +184,8 @@ class ResnetBlock(nn.Module):
         h += self.time_mlp(temb)[:, :, None, None]
         h = self.conv2(F.silu(self.norm2(h)))
         return h + self.shortcut(x)
-    
+
 class UNet2DConditionModel(nn.Module):
-    def __init__(self, in_c=3, out_c=3, model_channels=128, channel_multiplier=(1, 2, 3, 4), context_dim=512):
-        super().__init__()
-        self.time_embed = TimeEmbedding(model_channels * channel_multiplier[0])
-        temb_dim = model_channels * channel_multiplier[0] * 4
-        self.conv_in = nn.Conv2d(in_c, model_channels * channel_multiplier[0], 3, padding=1)
-        
-        self.down1 = ResnetBlock(model_channels * channel_multiplier[0], model_channels * channel_multiplier[0], temb_dim)
-        self.attn1 = CrossAttention(model_channels * channel_multiplier[0], context_dim)
-        self.down1_pool = nn.Conv2d(model_channels * channel_multiplier[0], model_channels * channel_multiplier[1], 3, stride=2, padding=1)
-        
-        self.down2 = ResnetBlock(model_channels * channel_multiplier[1], model_channels * channel_multiplier[1], temb_dim)
-        self.attn2 = CrossAttention(model_channels * channel_multiplier[1], context_dim)
-        self.down2_pool = nn.Conv2d(model_channels * channel_multiplier[1], model_channels * channel_multiplier[2], 3, stride=2, padding=1)
-        
-        self.down3 = ResnetBlock(model_channels * channel_multiplier[2], model_channels * channel_multiplier[2], temb_dim)
-        self.attn3 = CrossAttention(model_channels * channel_multiplier[2], context_dim)
-        self.down3_pool = nn.Conv2d(model_channels * channel_multiplier[2], model_channels * channel_multiplier[3], 3, stride=2, padding=1)
-        
-        self.down4 = ResnetBlock(model_channels * channel_multiplier[3], model_channels * channel_multiplier[3], temb_dim)
-        self.down4_pool = nn.Conv2d(model_channels * channel_multiplier[3], model_channels * channel_multiplier[3], 3, stride=2, padding=1)
-
-        self.mid_block1 = ResnetBlock(model_channels * channel_multiplier[3], model_channels * channel_multiplier[3], temb_dim)
-        self.mid_attn = CrossAttention(model_channels * channel_multiplier[3], context_dim)
-        self.mid_block2 = ResnetBlock(model_channels * channel_multiplier[3], model_channels * channel_multiplier[3], temb_dim)
-        
-        self.up4_unpool = nn.ConvTranspose2d(model_channels * channel_multiplier[3], model_channels * channel_multiplier[3], kernel_size=4, stride=2, padding=1)
-        self.up4 = ResnetBlock(model_channels * channel_multiplier[3] * 2, model_channels * channel_multiplier[3], temb_dim)
-
-        self.up3_unpool = nn.ConvTranspose2d(model_channels * channel_multiplier[3], model_channels * channel_multiplier[2], kernel_size=4, stride=2, padding=1)
-        self.up3 = ResnetBlock(model_channels * channel_multiplier[2] * 2, model_channels * channel_multiplier[2], temb_dim)
-        self.up3_attn = CrossAttention(model_channels * channel_multiplier[2], context_dim)
-        
-        self.up2_unpool = nn.ConvTranspose2d(model_channels * channel_multiplier[2], model_channels * channel_multiplier[1], kernel_size=4, stride=2, padding=1)
-        self.up2 = ResnetBlock(model_channels * channel_multiplier[1] * 2, model_channels * channel_multiplier[1], temb_dim)
-        self.up2_attn = CrossAttention(model_channels * channel_multiplier[1], context_dim)
-        
-        self.up1_unpool = nn.ConvTranspose2d(model_channels * channel_multiplier[1], model_channels * channel_multiplier[0], kernel_size=4, stride=2, padding=1)
-        self.up1 = ResnetBlock(model_channels * channel_multiplier[0] * 2, model_channels * channel_multiplier[0], temb_dim)
-        self.up1_attn = CrossAttention(model_channels * channel_multiplier[0], context_dim)
-        
-        self.out = nn.Sequential(
-            nn.GroupNorm(8, model_channels * channel_multiplier[0]),
-            nn.SiLU(),
-            nn.Conv2d(model_channels * channel_multiplier[0], out_c, 3, padding=1)
-        )
-        
-    def forward(self, x, t, context):
-        temb = self.time_embed(t)
-        x1 = self.conv_in(x)
-        
-        # --- Down 1 (CrossAttn) ---
-        x1_res = self.down1(x1, temb)
-        x1_res = self.attn1(x1_res, context)
-        x2 = self.down1_pool(x1_res)
-        
-        # --- Down 2 (CrossAttn) ---
-        x2_res = self.down2(x2, temb)
-        x2_res = self.attn2(x2_res, context)
-        x3 = self.down2_pool(x2_res)
-        
-        # --- Down 3 (CrossAttn) ---
-        x3_res = self.down3(x3, temb)
-        x3_res = self.attn3(x3_res, context)
-        x4 = self.down3_pool(x3_res)
-        
-        # --- Down 4 (Down) ---
-        x4_res = self.down4(x4, temb)
-        x5 = self.down4_pool(x4_res)
-        
-        # --- Middle (CrossAttn) ---
-        x5 = self.mid_block1(x5, temb)
-        x5 = self.mid_attn(x5, context)
-        x5 = self.mid_block2(x5, temb)
-        
-        # --- Up 4 (Up) ---
-        h = self.up4_unpool(x5)
-        h = torch.cat([h, x4_res], dim=1)
-        h = self.up4(h, temb)
-        
-        # --- Up 3 (CrossAttn) ---
-        h = self.up3_unpool(h)
-        h = torch.cat([h, x3_res], dim=1)
-        h = self.up3(h, temb)
-        h = self.up3_attn(h, context)
-        
-        # --- Up 2 (CrossAttn) ---
-        h = self.up2_unpool(h)
-        h = torch.cat([h, x2_res], dim=1)
-        h = self.up2(h, temb)
-        h = self.up2_attn(h, context)
-        
-        # --- Up 1 (CrossAttn) ---
-        h = self.up1_unpool(h)
-        h = torch.cat([h, x1_res], dim=1)
-        h = self.up1(h, temb)
-        h = self.up1_attn(h, context)
-        
-        return self.out(h)
-
-class UNet2DConditionModel2(nn.Module):
     def __init__(self, in_c=3, out_c=3, model_channels=128, channel_multiplier=(1, 2, 3, 4), context_dim=512):
         super().__init__()
         self.time_embed = TimeEmbedding(model_channels * channel_multiplier[0])
@@ -662,7 +562,7 @@ if __name__ == "__main__":
 
     IMG_SIZE = 64
     BATCH_SIZE = 32
-    EPOCHS = 200
+    EPOCHS = 300
 
     train_dir = os.path.join("dataset", "trainset")
     if not os.path.exists(train_dir):
@@ -674,7 +574,7 @@ if __name__ == "__main__":
     eval_dataset = BrainrotDataset(img_dir=train_dir, img_size=IMG_SIZE, is_train=False)
     eval_dataloader = DataLoader(eval_dataset, batch_size=BATCH_SIZE, shuffle=False, drop_last=False)
     
-    unet = UNet2DConditionModel2().to(device)
+    unet = UNet2DConditionModel().to(device)
     ema_unet = create_ema_model(unet)
     scheduler = DDIMScheduler(
         num_train_timesteps=1000,

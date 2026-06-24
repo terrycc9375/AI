@@ -20,7 +20,7 @@ from torch.utils.data import Dataset, DataLoader
 from scipy.linalg import sqrtm
 from torchvision import transforms
 from torchvision.models import inception_v3
-from transformers import CLIPTokenizer, CLIPTextModel, CLIPProcessor, CLIPModel
+from transformers import CLIPTokenizer, CLIPTextModel, CLIPProcessor, CLIPModel, get_cosine_schedule_with_warmup
 from diffusers import DDIMScheduler
 from PIL import Image
 from rich.progress import (
@@ -42,12 +42,12 @@ class BrainrotDataset(Dataset):
             self.transform = transforms.Compose([
                 transforms.Resize((img_size, img_size)),
                 transforms.RandomHorizontalFlip(p=0.5),
-                transforms.RandomAffine(
-                    degrees=6,
-                    translate=(0.05, 0.05),
-                    scale=(0.95, 1.05),
-                    interpolation=transforms.InterpolationMode.BILINEAR
-                ),
+                # transforms.RandomAffine(
+                #     degrees=6,
+                #     translate=(0.05, 0.05),
+                #     scale=(0.95, 1.05),
+                #     interpolation=transforms.InterpolationMode.BILINEAR
+                # ),
                 transforms.ToTensor(),
                 transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
             ])
@@ -225,80 +225,96 @@ class UNet2DConditionModel(nn.Module):
         
         return self.out(h)
 
-class DiffusionPipeline(nn.Module):
-    def __init__(self, model, device, num_steps=1000, beta_start=1e-4, beta_end=0.02):
+class UNet2DConditionModel2(nn.Module):
+    def __init__(self, in_c=3, out_c=3, model_channels=128, channel_multiplier=(1, 2, 3, 4), context_dim=512):
         super().__init__()
-        self.model = model
-        self.num_steps = num_steps
-        self.betas = torch.linspace(beta_start, beta_end, num_steps, device=device)
-        self.alphas = (1.0 - self.betas).to(device)
-        self.alphas_cumprod = torch.cumprod(self.alphas, dim=0).to(device)
+        self.time_embed = TimeEmbedding(model_channels * channel_multiplier[0])
+        temb_dim = model_channels * channel_multiplier[0] * 4
+        self.conv_in = nn.Conv2d(in_c, model_channels * channel_multiplier[0], 3, padding=1)
         
-    def add_noise(self, x_0, t, noise=None):
-        if noise is None:
-            noise = torch.randn_like(x_0)
-        sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod[t])[:, None, None, None]
-        sqrt_one_minus_alphas_cumprod = torch.sqrt(1.0 - self.alphas_cumprod[t])[:, None, None, None]
-        return sqrt_alphas_cumprod * x_0 + sqrt_one_minus_alphas_cumprod * noise
+        self.down1 = ResnetBlock(model_channels * channel_multiplier[0], model_channels * channel_multiplier[0], temb_dim)
+        self.down1_pool = nn.Conv2d(model_channels * channel_multiplier[0], model_channels * channel_multiplier[1], 3, stride=2, padding=1)
         
-    @torch.no_grad()
-    def sample(self, context, cfg_scale=3.0, steps=50):
-        device = next(self.model.parameters()).device
-        b = context.shape[0]
-        x = torch.randn(b, 3, 64, 64, device=device)
-        uncond_context = torch.zeros_like(context)
+        self.down2 = ResnetBlock(model_channels * channel_multiplier[1], model_channels * channel_multiplier[1], temb_dim)
+        self.attn2 = CrossAttention(model_channels * channel_multiplier[1], context_dim)
+        self.down2_pool = nn.Conv2d(model_channels * channel_multiplier[1], model_channels * channel_multiplier[2], 3, stride=2, padding=1)
         
-        timesteps = torch.linspace(self.num_steps - 1, 0, steps, dtype=torch.long, device=device)
-        for i, t_idx in enumerate(timesteps):
-            t = torch.full((b,), t_idx, device=device, dtype=torch.long)
-            
-            noise_pred_cond = self.model(x, t, context)
-            noise_pred_uncond = self.model(x, t, uncond_context)
-            noise_pred = noise_pred_uncond + cfg_scale * (noise_pred_cond - noise_pred_uncond)
-            
-            alpha_cumprod = self.alphas_cumprod[t_idx]
-            alpha_cumprod_prev = self.alphas_cumprod[timesteps[i+1]] if i < steps - 1 else torch.tensor(1.0, device=device)
-            
-            x_0_pred = (x - torch.sqrt(1.0 - alpha_cumprod) * noise_pred) / torch.sqrt(alpha_cumprod)
-            x_0_pred = torch.clamp(x_0_pred, -1.0, 1.0)
-            
-            dir_xt = torch.sqrt(1.0 - alpha_cumprod_prev) * noise_pred
-            x = torch.sqrt(alpha_cumprod_prev) * x_0_pred + dir_xt
-            
-        return (x + 1.0) / 2.0
+        self.down3 = ResnetBlock(model_channels * channel_multiplier[2], model_channels * channel_multiplier[2], temb_dim)
+        self.attn3 = CrossAttention(model_channels * channel_multiplier[2], context_dim)
+        self.down3_pool = nn.Conv2d(model_channels * channel_multiplier[2], model_channels * channel_multiplier[3], 3, stride=2, padding=1)
+        
+        self.down4 = ResnetBlock(model_channels * channel_multiplier[3], model_channels * channel_multiplier[3], temb_dim)
+        self.attn4 = CrossAttention(model_channels * channel_multiplier[3], context_dim)
+        self.down4_pool = nn.Conv2d(model_channels * channel_multiplier[3], model_channels * channel_multiplier[3], 3, stride=2, padding=1)
 
-@torch.no_grad()
-def sample(
-    unet: UNet2DConditionModel,
-    scheduler: DDIMScheduler,
-    context,
-    device: str = "cuda",
-    cfg_scale: float = 3.0,
-    steps: int = 50,
-):
-    b = context.shape[0]
-    x = torch.randn(b, 3, 64, 64, device=device)
-    uncond_context = torch.zeros_like(context)
-    scheduler.set_timesteps(num_inference_steps=steps, device=device)
-
-    for t in scheduler.timesteps:
-        timestep_batch = torch.full((b,), t, device=device, dtype=torch.long)
+        self.mid_block1 = ResnetBlock(model_channels * channel_multiplier[3], model_channels * channel_multiplier[3], temb_dim)
+        self.mid_attn = CrossAttention(model_channels * channel_multiplier[3], context_dim)
+        self.mid_block2 = ResnetBlock(model_channels * channel_multiplier[3], model_channels * channel_multiplier[3], temb_dim)
         
-        # Classifier-Free Guidance (CFG) outputs
-        noise_pred_cond = unet(x, timestep_batch, context)
-        noise_pred_uncond = unet(x, timestep_batch, uncond_context)
-        noise_pred = noise_pred_uncond + cfg_scale * (noise_pred_cond - noise_pred_uncond)
+        self.up4_unpool = nn.ConvTranspose2d(model_channels * channel_multiplier[3], model_channels * channel_multiplier[3], kernel_size=4, stride=2, padding=1)
+        self.up4 = ResnetBlock(model_channels * channel_multiplier[3] * 2, model_channels * channel_multiplier[3], temb_dim)
+        self.up4_attn = CrossAttention(model_channels * channel_multiplier[3], context_dim)
 
-        x = scheduler.step(noise_pred, t, x).prev_sample
-
-        # Dynamic Threshold
-        # abs_x = torch.abs(x)
-        # s = torch.quantile(abs_x.reshape(b, -1), 0.99, dim=1)
-        # s = torch.clamp(s, min=1.0)
-        # s = s[:, None, None, None]
-        # x = torch.clamp(x, min=-s, max=s) / s
+        self.up3_unpool = nn.ConvTranspose2d(model_channels * channel_multiplier[3], model_channels * channel_multiplier[2], kernel_size=4, stride=2, padding=1)
+        self.up3 = ResnetBlock(model_channels * channel_multiplier[2] * 2, model_channels * channel_multiplier[2], temb_dim)
+        self.up3_attn = CrossAttention(model_channels * channel_multiplier[2], context_dim)
         
-    return (x + 1.0) / 2.0
+        self.up2_unpool = nn.ConvTranspose2d(model_channels * channel_multiplier[2], model_channels * channel_multiplier[1], kernel_size=4, stride=2, padding=1)
+        self.up2 = ResnetBlock(model_channels * channel_multiplier[1] * 2, model_channels * channel_multiplier[1], temb_dim)
+        self.up2_attn = CrossAttention(model_channels * channel_multiplier[1], context_dim)
+        
+        self.up1_unpool = nn.ConvTranspose2d(model_channels * channel_multiplier[1], model_channels * channel_multiplier[0], kernel_size=4, stride=2, padding=1)
+        self.up1 = ResnetBlock(model_channels * channel_multiplier[0] * 2, model_channels * channel_multiplier[0], temb_dim)
+        
+        self.out = nn.Sequential(
+            nn.GroupNorm(8, model_channels * channel_multiplier[0]),
+            nn.SiLU(),
+            nn.Conv2d(model_channels * channel_multiplier[0], out_c, 3, padding=1)
+        )
+        
+    def forward(self, x, t, context):
+        temb = self.time_embed(t)
+        x1 = self.conv_in(x)
+        
+        x1_res = self.down1(x1, temb)
+        x2 = self.down1_pool(x1_res)
+        
+        x2_res = self.down2(x2, temb)
+        x2_res = self.attn2(x2_res, context)
+        x3 = self.down2_pool(x2_res)
+        
+        x3_res = self.down3(x3, temb)
+        x3_res = self.attn3(x3_res, context)
+        x4 = self.down3_pool(x3_res)
+        
+        x4_res = self.down4(x4, temb)
+        x4_res = self.attn4(x4_res, context)
+        x5 = self.down4_pool(x4_res)
+        
+        x5 = self.mid_block1(x5, temb)
+        x5 = self.mid_attn(x5, context)
+        x5 = self.mid_block2(x5, temb)
+        
+        h = self.up4_unpool(x5)
+        h = torch.cat([h, x4_res], dim=1)
+        h = self.up4(h, temb)
+        h = self.up4_attn(h, context)
+        
+        h = self.up3_unpool(h)
+        h = torch.cat([h, x3_res], dim=1)
+        h = self.up3(h, temb)
+        h = self.up3_attn(h, context) 
+        
+        h = self.up2_unpool(h)
+        h = torch.cat([h, x2_res], dim=1)
+        h = self.up2(h, temb)
+        h = self.up2_attn(h, context) 
+        
+        h = self.up1_unpool(h)
+        h = torch.cat([h, x1_res], dim=1)
+        h = self.up1(h, temb)
+        
+        return self.out(h)
 
 class Evaluator():
     def __init__(self, device):
@@ -339,11 +355,45 @@ class Evaluator():
         text_features = text_features / text_features.norm(dim=-1, keepdim=True)
         return (image_features * text_features).sum(dim=-1).mean().item()
 
+@torch.no_grad()
+def sample(
+    unet: UNet2DConditionModel,
+    scheduler: DDIMScheduler,
+    context,
+    device: str = "cuda",
+    cfg_scale: float = 3.0,
+    steps: int = 50,
+):
+    b = context.shape[0]
+    x = torch.randn(b, 3, 64, 64, device=device)
+    uncond_context = torch.zeros_like(context)
+    scheduler.set_timesteps(num_inference_steps=steps, device=device)
+
+    for t in scheduler.timesteps:
+        timestep_batch = torch.full((b,), t, device=device, dtype=torch.long)
+        
+        # Classifier-Free Guidance (CFG) outputs
+        noise_pred_cond = unet(x, timestep_batch, context)
+        noise_pred_uncond = unet(x, timestep_batch, uncond_context)
+        noise_pred = noise_pred_uncond + cfg_scale * (noise_pred_cond - noise_pred_uncond)
+
+        x = scheduler.step(noise_pred, t, x).prev_sample
+
+        # Dynamic Threshold
+        # abs_x = torch.abs(x)
+        # s = torch.quantile(abs_x.reshape(b, -1), 0.99, dim=1)
+        # s = torch.clamp(s, min=1.0)
+        # s = s[:, None, None, None]
+        # x = torch.clamp(x, min=-s, max=s) / s
+        
+    return (x + 1.0) / 2.0
+
 def train_diffusion(
         unet: UNet2DConditionModel, 
         scheduler: DDIMScheduler, 
         dataloader: DataLoader, 
         optimizer: torch.optim.Adam, 
+        lr_scheduler: torch.optim.lr_scheduler.LambdaLR,
         tokenizer, 
         text_encoder, 
         epochs, 
@@ -375,8 +425,9 @@ def train_diffusion(
                 pred_noise = unet(noisy_images, t, context)
                 loss = F.mse_loss(pred_noise, noise)
                 loss.backward()
-                # torch.nn.utils.clip_grad_norm_(unet.parameters(), 1.0)
+                torch.nn.utils.clip_grad_norm_(unet.parameters(), 1.0)
                 optimizer.step()
+                lr_scheduler.step()
                 progress.advance(epoch_task)
             progress.remove_task(epoch_task)
             progress.advance(global_task)
@@ -389,36 +440,38 @@ def generate_save_and_evaluate_fid(unet, scheduler, dataloader, tokenizer, text_
     clip_scores = []
     eval_count = 0
     
-    with Progress(
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        TimeRemainingColumn(),
-        TimeElapsedColumn(),
-    ) as progress:
-        task = progress.add_task("Evaluating", total=(num_images // batch_size) + 1)
-        for images, prompts in dataloader:
-            if eval_count >= num_images:
-                break
-            images = images.to(device)
-            tokens = tokenizer(prompts, padding="max_length", max_length=77, return_tensors="pt").to(device)
-            with torch.no_grad():
-                context = text_encoder(**tokens).last_hidden_state
-                gen_images = sample(unet, scheduler, context, cfg_scale=3.0, steps=ddim_steps)
-            real_feats = evaluator.get_inception_features((images + 1.0) / 2.0)
-            gen_feats = evaluator.get_inception_features(gen_images)
-            real_features_list.append(real_feats)
-            gen_features_list.append(gen_feats)
-            c_score = evaluator.calculate_clip_score(gen_images, prompts)
-            clip_scores.append(c_score)
-            eval_count += gen_images.shape[0]
-            progress.advance(task)
+    EVALUATE = True
+    if EVALUATE:
+        with Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeRemainingColumn(),
+            TimeElapsedColumn(),
+        ) as progress:
+            task = progress.add_task("Evaluating", total=(num_images // batch_size) + 1)
+            for images, prompts in dataloader:
+                if eval_count >= num_images:
+                    break
+                images = images.to(device)
+                tokens = tokenizer(prompts, padding="max_length", max_length=77, return_tensors="pt").to(device)
+                with torch.no_grad():
+                    context = text_encoder(**tokens).last_hidden_state
+                    gen_images = sample(unet, scheduler, context, cfg_scale=3.0, steps=ddim_steps)
+                real_feats = evaluator.get_inception_features((images + 1.0) / 2.0)
+                gen_feats = evaluator.get_inception_features(gen_images)
+                real_features_list.append(real_feats)
+                gen_features_list.append(gen_feats)
+                c_score = evaluator.calculate_clip_score(gen_images, prompts)
+                clip_scores.append(c_score)
+                eval_count += gen_images.shape[0]
+                progress.advance(task)
 
-    real_features = np.concatenate(real_features_list, axis=0)[:num_images]
-    gen_features = np.concatenate(gen_features_list, axis=0)[:num_images]
-    fid = evaluator.calculate_fid(real_features, gen_features)
-    mean_clip = np.mean(clip_scores)
-    print(f">> Evaluation finished. Calculated FID: {fid:.4f} | Mean CLIP Score: {mean_clip:.4f}")
+        real_features = np.concatenate(real_features_list, axis=0)[:num_images]
+        gen_features = np.concatenate(gen_features_list, axis=0)[:num_images]
+        fid = evaluator.calculate_fid(real_features, gen_features)
+        mean_clip = np.mean(clip_scores)
+        print(f">> Evaluation finished. Calculated FID: {fid:.4f} | Mean CLIP Score: {mean_clip:.4f}")
 
     os.makedirs(output_dir, exist_ok=True)
     df_gen = pd.read_csv("dataset/generate.csv")
@@ -448,8 +501,8 @@ def generate_save_and_evaluate_fid(unet, scheduler, dataloader, tokenizer, text_
                 
             for j in range(gen_images.shape[0]):
                 img_arr = (gen_images[j].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-                Image.fromarray(img_arr).save(os.path.join(output_dir, f"{save_count:04d}.png"))
                 save_count += 1
+                Image.fromarray(img_arr).save(os.path.join(output_dir, f"{save_count:06d}.png"))
             
             progress.advance(task)
             
@@ -464,7 +517,7 @@ if __name__ == "__main__":
 
     IMG_SIZE = 64
     BATCH_SIZE = 32
-    EPOCHS = 150
+    EPOCHS = 500
 
     train_dir = os.path.join("dataset", "trainset")
     if not os.path.exists(train_dir):
@@ -476,8 +529,7 @@ if __name__ == "__main__":
     eval_dataset = BrainrotDataset(img_dir=train_dir, img_size=IMG_SIZE, is_train=False)
     eval_dataloader = DataLoader(eval_dataset, batch_size=BATCH_SIZE, shuffle=False, drop_last=False)
     
-    unet = UNet2DConditionModel().to(device)
-    # pipeline = DiffusionPipeline(unet, device, num_steps=1000)
+    unet = UNet2DConditionModel2().to(device)
     scheduler = DDIMScheduler(
         num_train_timesteps=1000,
         beta_start=0.0001,
@@ -488,6 +540,9 @@ if __name__ == "__main__":
         clip_sample_range=1.0,
     )
     optimizer = torch.optim.AdamW(unet.parameters(), lr=1e-4)
+    total_steps = EPOCHS * len(dataloader)
+    warmup_steps = int(total_steps * 0.05)
+    lr_scheduler = get_cosine_schedule_with_warmup(optimizer, warmup_steps, total_steps)
     
     tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-base-patch32")
     text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
@@ -497,7 +552,7 @@ if __name__ == "__main__":
 
     if len(dataset) > 0:
         print(f"Starting standard DDIM optimization structure ({EPOCHS} epochs total)...")
-        train_diffusion(unet, scheduler, dataloader, optimizer, tokenizer, text_encoder, EPOCHS, device)
+        train_diffusion(unet, scheduler, dataloader, optimizer, lr_scheduler, tokenizer, text_encoder, EPOCHS, device)
 
         torch.save(unet.state_dict(), "unet.pth")
         print("Model checkpoint saved as unet.pth")

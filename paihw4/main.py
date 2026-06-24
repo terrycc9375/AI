@@ -361,8 +361,8 @@ if __name__ == "__main__":
         1. Use different priors, e.g., Beta(2, 2), Beta(5, 5), Beta(1, 3), etc.
         2. Use larger number of trials, e.g., 10,000 or 100,000.
     """
-    # run_epsilon_greedy()
-    # run_ucb()
+    run_epsilon_greedy()
+    run_ucb()
     run_thompson_sampling()
 
 
